@@ -150,7 +150,6 @@ def test_batch_encode_modes(
 
 def test_codebook_manager():
 
-
     config = CodebookConfig(
         initial_vocab_size=27,
         max_codebook_size=100,

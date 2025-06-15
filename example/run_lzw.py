@@ -1,7 +1,6 @@
 from zip2zip_compression import LZWCompressor
 
 
-
 compressor = LZWCompressor(
     initial_vocab_size=27,
     max_codebook_size=100,
@@ -10,7 +9,7 @@ compressor = LZWCompressor(
     disabled_ids=[26],
 )
 
-text = "abcde"*3
+text = "abcde" * 3
 
 mapping = {
     "a": 1,
@@ -29,8 +28,6 @@ print(f"input ids: {ids}")
 print(f"compressed_ids: {compressed_ids}")
 print(f"attention_mask: {attention_mask}")
 print(f"codebook: {codebook.to_decoding_dict()}")
-
-
 
 
 # decompress
