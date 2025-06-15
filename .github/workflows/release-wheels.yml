@@ -1,0 +1,126 @@
+# .github/workflows/build-and-release-wheels.yml
+name: Build and Release Python Wheels
+
+on:
+  push:
+    tags:
+      - 'v*'            # v0.1.0, v1.2.3 …
+
+permissions:
+  contents: write       # needed for the release job
+
+env:
+  CARGO_TERM_COLOR: always
+
+############################################################
+# 1. Linux (manylinux2014) — one job per CPython version
+############################################################
+jobs:
+  linux-wheels:
+    name: manylinux2014 wheels
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cargo cache to speed up rebuilds
+      - uses: Swatinem/rust-cache@v2
+
+      # Use the maturin docker wrapper (handles Rust + Python + auditwheel)
+      - uses: messense/maturin-action@v1
+        with:
+          maturin-version: "latest"
+          command: build
+          args: --release --strip -i python${{ matrix.python-version }}
+
+      - name: Upload wheels (${{ matrix.python-version }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.python-version }}
+          path: target/wheels/*.whl
+
+############################################################
+# 2. macOS wheels
+############################################################
+  macos-wheels:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        run: maturin build --release --strip -i python
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.python-version }}
+          path: target/wheels/*.whl
+
+############################################################
+# 3. Windows wheels
+############################################################
+  windows-wheels:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        run: maturin build --release --strip -i python
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.python-version }}
+          path: target/wheels/*.whl
+
+############################################################
+# 4. Combine wheels and create the GitHub release
+############################################################
+  release:
+    needs: [linux-wheels, macos-wheels, windows-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheelhouse
+
+      - name: Flatten directory tree
+        run: |
+          mkdir final
+          find wheelhouse -name "*.whl" -exec mv {} final/ \;
+
+      - name: Create GitHub Release and upload wheels
+        uses: softprops/action-gh-release@v2
+        with:
+          files: final/*.whl

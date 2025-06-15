@@ -1,4 +1,4 @@
-from zip2zip_compression import LZWCompressor, CodebookConfig
+from zip2zip_compression import LZWCompressor
 
 
 
