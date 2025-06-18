@@ -35,12 +35,16 @@ impl CodebookConfig {
         pad_token_id: usize,
         disabled_ids: Option<HashSet<usize>>,
     ) -> Self {
+        // insert the pad token id in the disabled ids
+        let mut disabled_ids = disabled_ids.unwrap_or_else(|| HashSet::new());
+        disabled_ids.insert(pad_token_id);
+
         Self {
             initial_vocab_size,
             max_codebook_size,
             max_subtokens,
             pad_token_id,
-            disabled_ids: disabled_ids.unwrap_or_default(),
+            disabled_ids,
         }
     }
 }

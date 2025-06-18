@@ -4,6 +4,7 @@ use zip2zip_compression::{LZWCompressor, CodebookConfig, PaddingStrategy, Codebo
 fn get_alphabet_codebook_config() -> CodebookConfig {
     let mut disabled_ids: HashSet<usize> = HashSet::new();
     disabled_ids.insert(26); // 'z'
+    disabled_ids.insert(0); // '\0' padding token
 
     // 26 letters + 1 for the pad token
     CodebookConfig::new(27, 100, 5, 0, Some(disabled_ids))
