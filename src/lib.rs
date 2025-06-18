@@ -1,5 +1,5 @@
 use bumpalo::{collections::Vec as BumpVec, Bump};
-use hashbrown::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use itertools::Itertools;
 use pyo3::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -33,14 +33,14 @@ impl CodebookConfig {
         max_codebook_size: usize,
         max_subtokens: usize,
         pad_token_id: usize,
-        disabled_ids: HashSet<usize>,
+        disabled_ids: Option<HashSet<usize>>,
     ) -> Self {
         Self {
             initial_vocab_size,
             max_codebook_size,
             max_subtokens,
             pad_token_id,
-            disabled_ids,
+            disabled_ids: disabled_ids.unwrap_or_default(),
         }
     }
 }
@@ -196,8 +196,8 @@ impl Codebook {
         result
     }
 
-    pub fn to_decoding_dict(&self) -> HashMap<usize, Vec<usize>> {
-        let mut result = HashMap::with_capacity(self.base_ids2hyper_id_map.len());
+    pub fn to_dict(&self) -> BTreeMap<usize, Vec<usize>> {
+        let mut result = BTreeMap::new();
         for (ids, id) in self.base_ids2hyper_id_map.iter() {
             result.insert(*id, ids.clone());
         }
@@ -291,6 +291,8 @@ impl LZWCompressor {
 
             let id = ids[i];
             i += 1;
+            log::debug!("coming id: {}", id);
+            log::debug!("buffer_ids_to_merge: {:?}", buffer_ids_to_merge);
 
             if self.config.disabled_ids.contains(&id) {
                 if buffer_ids_to_merge.len() > 0 {
@@ -478,7 +480,7 @@ impl LZWCompressor {
             if self.config.disabled_ids.contains(&id) {
                 previous_ids.clear();
                 output_ids.push(id);
-                log::debug!("emitting id: {}", id);
+                log::debug!("emitting disabled id: {}", id);
                 continue;
             }
 
@@ -495,7 +497,7 @@ impl LZWCompressor {
             // 1. the id is a new hyper id because of force merge
             } else if previous_ids.len() == self.config.max_subtokens {
                 decoded_ids = previous_ids.clone();
-            // 2. the id is a new hyper id because of cSc pattern merge
+            // 2. the id is a new hyper id because of cScSc pattern merge
             } else {
                 decoded_ids = previous_ids.clone();
                 decoded_ids.push(previous_ids[0]);
@@ -507,34 +509,53 @@ impl LZWCompressor {
                 previous_ids = decoded_ids.clone();
                 output_ids.extend_from_slice(&decoded_ids);
                 log::debug!("emitting id: {:?}", decoded_ids);
+                continue;
             }
             // we have decoded the id, we can add it to the output
             output_ids.extend_from_slice(&decoded_ids);
+            log::debug!("emitting id: {:?}", decoded_ids);
 
             // the remaining part is to update the codebook if needed
+
+            if next_id == self.config.initial_vocab_size + self.config.max_codebook_size {
+                log::debug!("max codebook size reached, clearing buffer_ids_to_merge");
+                previous_ids.clear();
+                continue;
+            }
+
+            // starting case
             if previous_ids.len() == 0 {
                 previous_ids = decoded_ids;
                 continue;
             }
 
-            while next_id < self.config.initial_vocab_size + self.config.max_codebook_size
-                && previous_ids.len() < self.config.max_subtokens && decoded_ids.len() > 0
-            {
-                previous_ids.push(decoded_ids[0]);
+            // the buffer is max size and the buffer is the previous ID
+            // so it must not be a new hyper id but an existing one
+            // we just clear the buffer and continue
+            if previous_ids.len() == self.config.max_subtokens {
+                assert!(existing_codes.contains(&previous_ids), "previous_ids: {:?} not in existing_codes: {:?}", previous_ids, existing_codes);
+                previous_ids = decoded_ids.clone();
+                continue;
+            } else {
 
-                if !existing_codes.contains(&previous_ids) {
-                    codebook.insert(next_id, previous_ids.clone());
-                    log::debug!("inserting: {:?} -> {:?}", previous_ids, next_id);
-                    next_id += 1;
-                    existing_codes.insert(previous_ids.clone());
-                    previous_ids = decoded_ids.clone();
-                    break;
-                } else if previous_ids.len() == self.config.max_subtokens {
-                    previous_ids = decoded_ids.clone();
-                    break;
+                while decoded_ids.len() > 0
+                {
+                    previous_ids.push(decoded_ids[0]);
+
+                    if !existing_codes.contains(&previous_ids) {
+                        codebook.insert(next_id, previous_ids.clone());
+                        log::debug!("inserting: {:?} -> {:?}", previous_ids, next_id);
+                        next_id += 1;
+                        existing_codes.insert(previous_ids.clone());
+                        previous_ids = decoded_ids.clone();
+                        break;
+                    } else if previous_ids.len() == self.config.max_subtokens {
+                        previous_ids = decoded_ids.clone();
+                        break;
+                    }
+
+                    decoded_ids.remove(0);
                 }
-
-                decoded_ids.remove(0);
             }
         }
 
@@ -611,7 +632,7 @@ impl LZWCompressor {
                 max_codebook_size,
                 max_subtokens,
                 pad_token_id,
-                disabled_ids,
+                Some(disabled_ids)
             ),
         }
     }
@@ -875,8 +896,8 @@ impl CodebookManager {
             let mut current_ids: Vec<usize>;
             if maybe_hid < config.initial_vocab_size {
                 current_ids = vec![maybe_hid];
-            } else if let Some(entry) = codebook.get_base_ids(maybe_hid) {
-                current_ids = entry.clone();
+            } else if let Some(base_ids) = codebook.get_base_ids(maybe_hid) {
+                current_ids = base_ids.clone();
                 // the following are cases when the  maybe_hid is an unknown hyper-id
                 // (1) the buffer was full and it was inserted in the codebook
             // TODO, I think the following is not needed, because
@@ -898,33 +919,38 @@ impl CodebookManager {
 
             }
 
+            if state.next_id == config.initial_vocab_size + config.max_codebook_size {
+                log::debug!("max_codebook_size reached, clearing buffer_ids_to_merge");
+                state.buffer_ids_to_merge.clear();
+                continue;
+            }
+
             // Starting time
             if state.buffer_ids_to_merge.len() == 0 {
                 state.buffer_ids_to_merge = current_ids.clone();
                 continue;
             }
 
-            while state.next_id < config.initial_vocab_size + config.max_codebook_size
-                && state.buffer_ids_to_merge.len() < config.max_subtokens && current_ids.len() > 0
-            {
-                state.buffer_ids_to_merge.push(current_ids[0]);
+            if state.buffer_ids_to_merge.len() == config.max_subtokens {
+                state.buffer_ids_to_merge = current_ids.clone();
+                continue;
+            } else {
+                while  current_ids.len() > 0 {
+                    state.buffer_ids_to_merge.push(current_ids[0]);
 
-                // check if it's already in the codebook
-                if !codebook.contains_key(&state.buffer_ids_to_merge) {
-                    codebook.insert(state.buffer_ids_to_merge.clone(), state.next_id);
-                    log::debug!("inserting: {:?} -> {:?}", state.buffer_ids_to_merge, state.next_id);
-                    state.next_id += 1;
-                    state.buffer_ids_to_merge = current_ids.clone();
-                    break;
-                } // reaching max_subtokens, we need to insert the current_ids into the codebook
-                else if state.buffer_ids_to_merge.len() == config.max_subtokens {
-                    state.buffer_ids_to_merge = current_ids.clone();
-                    break;
+                    if !codebook.contains_key(&state.buffer_ids_to_merge) {
+                        codebook.insert(state.buffer_ids_to_merge.clone(), state.next_id);
+                        log::debug!("inserting: {:?} -> {:?}", state.buffer_ids_to_merge, state.next_id);
+                        state.next_id += 1;
+                        state.buffer_ids_to_merge = current_ids.clone();
+                        break;
+                    } else if state.buffer_ids_to_merge.len() == config.max_subtokens {
+                        state.buffer_ids_to_merge = current_ids.clone();
+                        break;
+                    }
+                    current_ids.remove(0);
                 }
-                current_ids.remove(0);
-
             }
-
         }
     }
 }
@@ -1031,7 +1057,7 @@ impl CodebookManager {
                 _ => panic!("Invalid algorithm: {}", self.algorithm),
             }
 
-            // collect buffered updates from this state’s codebook
+            // collect buffered updates from this state's codebook
             state
                 .codebook
                 .borrow_mut(py)

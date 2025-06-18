@@ -1,12 +1,12 @@
-use hashbrown::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use zip2zip_compression::{LZWCompressor, CodebookConfig, PaddingStrategy, Codebook};
 
 fn get_alphabet_codebook_config() -> CodebookConfig {
-    let mut disabled_ids = HashSet::new();
+    let mut disabled_ids: HashSet<usize> = HashSet::new();
     disabled_ids.insert(26); // 'z'
 
     // 26 letters + 1 for the pad token
-    CodebookConfig::new(27, 100, 5, 0, disabled_ids.clone())
+    CodebookConfig::new(27, 100, 5, 0, Some(disabled_ids))
 }
 
 fn get_base_letter_to_id_map() -> HashMap<char, usize> {

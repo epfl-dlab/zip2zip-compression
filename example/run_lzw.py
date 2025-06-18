@@ -27,7 +27,7 @@ compressed_ids, attention_mask, codebook = compressor.encode(ids)
 print(f"input ids: {ids}")
 print(f"compressed_ids: {compressed_ids}")
 print(f"attention_mask: {attention_mask}")
-print(f"codebook: {codebook.to_decoding_dict()}")
+print(f"codebook: {codebook.to_dict()}")
 
 
 # decompress
