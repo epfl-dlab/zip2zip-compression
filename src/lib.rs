@@ -375,13 +375,13 @@ impl LZWCompressor {
     /// The `compressed_ids` is the list of compressed ids to decode.
     ///
     /// Returns a list of ids.
-    pub fn internal_decode(&self, compressed_ids: &Vec<usize>) -> Vec<usize> {
+    pub fn internal_decode(&self, compressed_ids: &Vec<usize>) -> (Vec<usize>, Codebook) {
         log::debug!("Hitting fn internal_decode");
         log::debug!("arg compressed_ids: {:?}", compressed_ids);
         let bump = Bump::new();
 
         let mut output_ids: Vec<usize> = Vec::with_capacity(compressed_ids.len());
-        let mut codebook: HashMap<usize, &[usize]> = HashMap::default();
+        let mut codebook: Codebook = Codebook::new_from_compressor(self);
 
         let mut next_id: usize = self.config.initial_vocab_size;
         let mut previous_ids: &[usize] = &[];
@@ -400,8 +400,8 @@ impl LZWCompressor {
             if id < self.config.initial_vocab_size {
                 decoded_ids = bump.alloc_slice_copy(&[id]);
             // if the id is a known hyper id, we can decode it
-            } else if let Some(slice) = codebook.get(&id) {
-                decoded_ids = slice;
+            } else if let Some(slice) = codebook.get_base_ids(id) {
+                decoded_ids = bump.alloc_slice_copy(&slice);
 
             // now the id is not known, two cases:
             // 1. the id is a new hyper id because of force merge
@@ -416,7 +416,7 @@ impl LZWCompressor {
 
                 decoded_ids = inferred_vec.into_bump_slice();
 
-                codebook.insert(id, decoded_ids);
+                codebook.insert(decoded_ids.to_vec(), id);
                 log::debug!("inserting: {:?} -> {:?}", decoded_ids, id);
                 next_id += 1;
             }
@@ -434,7 +434,7 @@ impl LZWCompressor {
 
                 let new_entry_slice = new_entry_vec.into_bump_slice();
 
-                codebook.insert(next_id, new_entry_slice);
+                codebook.insert(new_entry_slice.to_vec(), next_id);
                 log::debug!("inserting: {:?} -> {:?}", new_entry_slice, next_id);
                 next_id += 1;
             }
@@ -443,36 +443,17 @@ impl LZWCompressor {
             previous_ids = decoded_ids;
         }
 
-        output_ids
-    }
-    // TODO, to remove
-    pub fn internal_decode_with_codebook(
-        &self,
-        compressed_ids: &Vec<usize>,
-        codebook: PyRef<'_, Codebook>,
-    ) -> Vec<usize> {
-        let mut ids: Vec<usize> = Vec::with_capacity(compressed_ids.len());
-
-        for &maybe_id in compressed_ids {
-            ids.extend_from_slice(
-                &codebook
-                    .get_base_ids(maybe_id)
-                    .unwrap_or_else(|| vec![maybe_id]),
-            );
-        }
-
-        ids
+        (output_ids, codebook)
     }
 
-    pub fn internal_fuzzy_decode(&self, compressed_ids: &Vec<usize>) -> Vec<usize> {
+    pub fn internal_fuzzy_decode(&self, compressed_ids: &Vec<usize>) -> (Vec<usize>, Codebook) {
         log::debug!("Hitting fn internal_fuzzy_decode");
         log::debug!("arg compressed_ids: {:?}", compressed_ids);
         let mut output_ids: Vec<usize> = Vec::with_capacity(compressed_ids.len());
-        let mut codebook: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut codebook: Codebook = Codebook::new_from_compressor(self);
 
         let mut next_id: usize = self.config.initial_vocab_size;
         let mut previous_ids: Vec<usize> = Vec::new();
-        let mut existing_codes: HashSet<Vec<usize>> = HashSet::new();
 
         for &id in compressed_ids {
             log::debug!("coming id: {}", id);
@@ -490,7 +471,7 @@ impl LZWCompressor {
             if id < self.config.initial_vocab_size {
                 decoded_ids = vec![id];
             // if the id is a known hyper id, we can decode it
-            } else if let Some(base_ids) = codebook.get(&id) {
+            } else if let Some(base_ids) = codebook.get_base_ids(id) {
                 decoded_ids = base_ids.clone();
 
             // now the id is not known, two cases:
@@ -502,9 +483,8 @@ impl LZWCompressor {
                 decoded_ids = previous_ids.clone();
                 decoded_ids.push(previous_ids[0]);
 
-                codebook.insert(id, decoded_ids.clone());
+                codebook.insert(decoded_ids.clone(), id);
                 log::debug!("inserting: {:?} -> {:?}", decoded_ids, id);
-                existing_codes.insert(decoded_ids.clone());
                 next_id += 1;
                 previous_ids = decoded_ids.clone();
                 output_ids.extend_from_slice(&decoded_ids);
@@ -533,7 +513,7 @@ impl LZWCompressor {
             // so it must not be a new hyper id but an existing one
             // we just clear the buffer and continue
             if previous_ids.len() == self.config.max_subtokens {
-                assert!(existing_codes.contains(&previous_ids), "previous_ids: {:?} not in existing_codes: {:?}", previous_ids, existing_codes);
+                assert!(codebook.contains_key(&previous_ids), "previous_ids: {:?} not in codebook: {:?}", previous_ids, codebook);
                 previous_ids = decoded_ids.clone();
                 continue;
             } else {
@@ -542,11 +522,10 @@ impl LZWCompressor {
                 {
                     previous_ids.push(decoded_ids[0]);
 
-                    if !existing_codes.contains(&previous_ids) {
-                        codebook.insert(next_id, previous_ids.clone());
+                    if !codebook.contains_key(&previous_ids) {
+                        codebook.insert(previous_ids.clone(), next_id);
                         log::debug!("inserting: {:?} -> {:?}", previous_ids, next_id);
                         next_id += 1;
-                        existing_codes.insert(previous_ids.clone());
                         previous_ids = decoded_ids.clone();
                         break;
                     } else if previous_ids.len() == self.config.max_subtokens {
@@ -560,9 +539,9 @@ impl LZWCompressor {
         }
 
         //print the codebook
-        log::debug!("Final codebook built from fuzzy decode: {:?}", codebook.iter().sorted_by_key(|(k, _v)| *k).collect::<Vec<_>>());
+        log::debug!("Final codebook built from fuzzy decode: {:?}", codebook.to_dict());
 
-        output_ids
+        (output_ids, codebook)
     }
 
     #[inline(always)]
@@ -682,14 +661,9 @@ impl LZWCompressor {
     /// Returns a list of ids.
     pub fn decode(
         &self,
-        compressed_ids: Vec<usize>,
-        codebook: Option<&PyCell<Codebook>>,
-    ) -> Vec<usize> {
-        if let Some(codebook) = codebook.map(|c| c.borrow()) {
-            self.internal_decode_with_codebook(&compressed_ids, codebook)
-        } else {
-            self.internal_fuzzy_decode(&compressed_ids)
-        }
+        compressed_ids: Vec<usize>
+    ) -> (Vec<usize>, Codebook) {
+        self.internal_fuzzy_decode(&compressed_ids)
     }
 
     /// Encode a batch of input ids into a batch of compressed ids.
@@ -760,22 +734,13 @@ impl LZWCompressor {
     /// Returns a list of ids.
     pub fn batch_decode(
         &self,
-        compressed_ids: Vec<Vec<usize>>,
-        codebooks: Option<Vec<&PyCell<Codebook>>>,
-    ) -> Vec<Vec<usize>> {
-        if let Some(codebooks) = codebooks {
-            compressed_ids
-                .iter()
-                .zip(codebooks.iter().map(|c| c.borrow()))
-                .map(|(ids, codebook)| self.internal_decode_with_codebook(ids, codebook))
-                .collect()
-        } else {
-            compressed_ids
+        compressed_ids: Vec<Vec<usize>>
+    ) -> Vec<(Vec<usize>, Codebook)> {
+        compressed_ids
                 .par_iter()
                 // .map(|ids| self.internal_decode(ids))
                 .map(|ids| self.internal_fuzzy_decode(ids))
                 .collect()
-        }
     }
 }
 

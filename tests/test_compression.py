@@ -3,6 +3,8 @@ from zip2zip_compression import LZWCompressor, CodebookConfig
 from zip2zip_compression import CodebookManager as RuntimeCodebookManager
 from zip2zip_compression import CodebookConfig
 
+from zip2zip_compression import Codebook
+
 
 # 4 Modes: Padding (X-axis) × Truncation (Y-axis)
 #
@@ -61,7 +63,7 @@ def test_encode_modes(padding, truncation, max_length, expected_length):
         max_codebook_size=100,
         max_subtokens=5,
         pad_token_id=PAD_TOKEN_ID,
-        disabled_ids=[26],
+        disabled_ids=[26, PAD_TOKEN_ID],
     )
 
     ids = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]  # len = 10
@@ -84,7 +86,7 @@ def test_encode_modes(padding, truncation, max_length, expected_length):
         assert len(attention_mask) == expected_length, "Attention mask mismatch"
 
     # test decode
-    decoded_ids = lzw.decode(compressed_ids, codebook)
+    decoded_ids, _codebook = lzw.decode(compressed_ids)
     unpadded_decoded_ids = [id for id in decoded_ids if id != PAD_TOKEN_ID]
     assert (
         unpadded_decoded_ids == ids[: len(unpadded_decoded_ids)]
@@ -120,7 +122,7 @@ def test_batch_encode_modes(
         max_codebook_size=100,
         max_subtokens=5,
         pad_token_id=PAD_TOKEN_ID,
-        disabled_ids=[26],
+        disabled_ids=[26, PAD_TOKEN_ID],
     )
 
     compressed_ids, attention_masks, codebooks = lzw.batch_encode(
@@ -140,7 +142,10 @@ def test_batch_encode_modes(
         ), "Compressed IDs at index 1 length mismatch"
 
     # test batch decode
-    decoded_ids: list[list[int]] = lzw.batch_decode(compressed_ids, codebooks)
+    decoded_ids_codebooks: list[tuple[list[int], Codebook]] = lzw.batch_decode(
+        compressed_ids
+    )
+    decoded_ids = [ids for ids, _codebook in decoded_ids_codebooks]
     unpadded_decoded_ids = [
         [id for id in ids if id != PAD_TOKEN_ID] for ids in decoded_ids
     ]

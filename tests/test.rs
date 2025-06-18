@@ -83,6 +83,6 @@ fn test_lzw_compressor() {
     );
 
     //  now decode the compressed ids
-    let decoded_ids = lzw_compressor2.internal_decode(&compressed_ids);
+    let (decoded_ids, _codebook) = lzw_compressor2.internal_decode(&compressed_ids);
     assert_eq!(decoded_ids, ids);
 }

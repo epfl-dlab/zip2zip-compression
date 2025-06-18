@@ -98,7 +98,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let ((compressed_ids, codebook), i) =
+    let ((compressed_ids, _codebook), i) =
         compressor.internal_encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
     let encode_time = start.elapsed();
 
@@ -109,7 +109,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let decoded_ids = compressor.internal_decode(&compressed_ids);
+    let (decoded_ids, codebook) = compressor.internal_decode(&compressed_ids);
     let decode_time = start.elapsed();
 
     println!(

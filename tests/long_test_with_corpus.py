@@ -28,14 +28,20 @@ compressor = LZWCompressor(
     max_codebook_size=2048,
     max_subtokens=8,
     pad_token_id=50256,
-    disabled_ids=[0, 1, 2, 3],
+    disabled_ids=[
+        0,
+        1,
+        2,
+        3,
+        50256,
+    ],  # it's crucial to have 50256 in the disabled_ids, otherwise we will not be able to distinguish the pad token id being part of merge or being just a padding token for merge
 )
 
 seq_len = 10_000
-for ts in tqdm(tokens.view(-1, seq_len)):
-    ts_list = ts.tolist()
+for tensor in tqdm(tokens.view(-1, seq_len)):
+    ts_list = tensor.tolist()
     encoded_ts, _, _ = compressor.encode(ts_list)
-    decoded_ts = compressor.decode(encoded_ts)
+    decoded_ts, _ = compressor.decode(encoded_ts)
 
     assert len(decoded_ts) == len(
         ts_list
