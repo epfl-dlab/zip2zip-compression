@@ -124,3 +124,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: final/*.whl
+
+############################################################
+# 5. Upload to PyPI
+############################################################
+  upload-to-pypi:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheelhouse
+
+      - name: Flatten directory tree
+        run: |
+          mkdir final
+          find wheelhouse -name "*.whl" -exec mv {} final/ \;
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages_dir: final
