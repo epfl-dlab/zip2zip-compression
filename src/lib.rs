@@ -78,7 +78,7 @@ impl Codebook {
         Self {
             base_ids2hyper_id_map: HashMap::with_capacity(config.max_codebook_size),
             merges: vec![
-                config.pad_token_id;
+                usize::MAX;
                 config.max_codebook_size * config.max_subtokens
             ],
             active_hyper_ids: HashSet::with_capacity(config.max_codebook_size),
@@ -125,14 +125,23 @@ impl Codebook {
             self.updates.len()
         };
 
-        let mut updates_vec: Vec<usize> = Vec::with_capacity(size * self.config.max_subtokens);
+        let mut updates_vec: Vec<usize> =
+            vec![self.config.pad_token_id; size * self.config.max_subtokens];
         let mut updates_indices: Vec<usize> = Vec::with_capacity(size);
 
         for &id in self.updates.iter().sorted() {
             let index = id - self.config.initial_vocab_size;
             let start_index = index * self.config.max_subtokens;
-            let end_index = start_index + self.config.max_subtokens;
-            updates_vec.extend_from_slice(&self.merges[start_index..end_index]);
+
+            let entry_length = self.merges[start_index..start_index + self.config.max_subtokens]
+                .iter()
+                .position(|&x| x == usize::MAX)
+                .unwrap_or(self.config.max_subtokens);
+
+            let end_index = start_index + entry_length;
+
+            updates_vec[start_index..end_index]
+                .copy_from_slice(&self.merges[start_index..end_index]);
             updates_indices.push(index);
         }
 
@@ -156,7 +165,7 @@ impl Codebook {
             let end_index = start_index + self.config.max_subtokens;
             let mut entry_vec = self.merges[start_index..end_index].to_vec();
 
-            while entry_vec.last() == Some(&self.config.pad_token_id) {
+            while entry_vec.last() == Some(&usize::MAX) {
                 entry_vec.pop();
             }
 
@@ -187,12 +196,15 @@ impl Codebook {
         for i in 0..size {
             let start_index = i * self.config.max_subtokens;
             let end_index = start_index + self.config.max_subtokens;
-            let mut entry_vec: Vec<usize> = self.merges[start_index..end_index].to_vec();
+            let mut entry_vec: Vec<usize> =
+                self.merges[start_index..end_index].to_vec();
 
-            if !use_padding {
-                while entry_vec.last() == Some(&self.config.pad_token_id) {
-                    entry_vec.pop();
-                }
+            while entry_vec.last() == Some(&usize::MAX) {
+                entry_vec.pop();
+            }
+
+            if use_padding {
+                entry_vec.resize(self.config.max_subtokens, self.config.pad_token_id);
             }
 
             result.push(entry_vec);
