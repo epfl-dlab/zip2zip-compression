@@ -8,7 +8,12 @@ from zip2zip_compression import LZWCompressor
 import pytest
 
 
-def load_dataset(sequence_length=10_000):
+VERBOSE = (
+    False  # Set to True for detailed output, but will be ignored in multiprocessing
+)
+
+
+def load_dataset(sequence_length=10_000, num_chunks=None):
     """Load and validate the dataset from HuggingFace."""
     filename = hf_hub_download(
         repo_id="kjj0/fineweb10B-gpt2",
@@ -29,7 +34,10 @@ def load_dataset(sequence_length=10_000):
         nbytes = f.readinto(tokens.numpy())
         assert nbytes == 2 * num_tokens, "number of tokens read does not match header"
 
-    return tokens.view(-1, sequence_length)
+    if num_chunks is None:
+        return tokens.view(-1, sequence_length)
+    else:
+        return tokens.view(-1, sequence_length)[:num_chunks]
 
 
 def create_compressor():
@@ -37,7 +45,7 @@ def create_compressor():
     return LZWCompressor(
         initial_vocab_size=50257,
         max_codebook_size=2048,
-        max_subtokens=8,
+        max_subtokens=32,
         pad_token_id=50256,
         disabled_ids=[
             0,
@@ -49,7 +57,7 @@ def create_compressor():
     )
 
 
-def process_chunk_idempotence(token_chunk, lzw_compressor=None, verbose=False):
+def check_chunk_idempotence(token_chunk, lzw_compressor=None, verbose=False):
     """Process a single chunk for the idempotence test"""
 
     if lzw_compressor is None:
@@ -67,15 +75,14 @@ def process_chunk_idempotence(token_chunk, lzw_compressor=None, verbose=False):
     return True, None, None, None
 
 
-def process_chunk_corrupted(token_chunk, lzw_compressor=None, verbose=False):
+def check_chunk_corrupted(token_chunk, lzw_compressor=None, verbose=False):
     """Process a single chunk for the corrupted generation test"""
     if lzw_compressor is None:
         lzw_compressor = create_compressor()
     original_tokens = token_chunk.tolist()
-    encoded_tokens, _, encode_codebook = lzw_compressor.encode(original_tokens)
-    corrupted_generation = corrupt(encoded_tokens, encode_codebook)
-    full_sequence = encoded_tokens + corrupted_generation
-    decoded_tokens, _ = lzw_compressor.decode(full_sequence)
+    encoded_tokens, _, encoding_codebook = lzw_compressor.encode(original_tokens)
+    corrupted_generation = corrupt(encoded_tokens, encoding_codebook)
+    decoded_tokens, decoding_codebook = lzw_compressor.decode(corrupted_generation)
     expected_sequence = original_tokens + original_tokens
 
     if verbose:
@@ -93,7 +100,7 @@ def dataset():
     return load_dataset()
 
 
-@pytest.fixture(scope="module")
+# @pytest.fixture(scope="module")
 def lzw_compressor():
     """Fixture to create the compressor once for all tests."""
     return create_compressor()
@@ -105,13 +112,13 @@ def test_encode_decode_idempotence(dataset, *, lzw_compressor=None, num_processe
         num_processes = mp.cpu_count()
 
     with mp.Pool(processes=num_processes) as pool:
-        process_fn = partial(process_chunk_idempotence, lzw_compressor=lzw_compressor)
+        process_fn = partial(check_chunk_idempotence, lzw_compressor=lzw_compressor)
         results = list(tqdm(pool.imap(process_fn, dataset), total=len(dataset)))
 
     for i, (success, index, a, b) in enumerate(results):
         assert (
             success
-        ), f"Decoded content mismatch in chunk {i} at index {index}: {a} != {b}"
+        ), f"Decoded content mismatch in chunk {i} at token {index}: {a} != {b}"
 
 
 def corrupt(encoded_tokens, codebook):
@@ -120,7 +127,9 @@ def corrupt(encoded_tokens, codebook):
     """
     output = []
     codebook_list = codebook.to_list(use_padding=False)
-    is_canonical = torch.randint(0, 2, (len(encoded_tokens),))
+    is_canonical = torch.randint(
+        0, 2, (len(encoded_tokens),), generator=torch.Generator().manual_seed(42)
+    )
     for token_id, use_canonical in zip(encoded_tokens, is_canonical):
         if use_canonical == 0 and token_id >= 50257:
             subtokens = codebook_list[token_id - 50257]
@@ -130,8 +139,15 @@ def corrupt(encoded_tokens, codebook):
     return output
 
 
+def _process_chunk_with_index(args):
+    """Helper function to process a chunk with its index for multiprocessing."""
+    idx, chunk = args
+    # Don't pass compressor — create it in the process
+    return idx, check_chunk_corrupted(chunk, verbose=VERBOSE)
+
+
 def test_corrupted_generation_decoding(
-    dataset, *, lzw_compressor=None, num_processes=None
+    token_chunks, *, lzw_compressor=None, num_processes=None
 ):
     """
     Test decoding of a sequence that is a concatenation of encoded tokens and a 'corrupted' generation.
@@ -140,14 +156,19 @@ def test_corrupted_generation_decoding(
     if num_processes is None:
         num_processes = mp.cpu_count()
 
+    indexed_chunks = list(enumerate(token_chunks))  # [(0, chunk0), (1, chunk1), ...]
     with mp.Pool(processes=num_processes) as pool:
-        process_fn = partial(process_chunk_corrupted, lzw_compressor=lzw_compressor)
-        results = list(tqdm(pool.imap(process_fn, dataset), total=len(dataset)))
+        results = list(
+            tqdm(
+                pool.imap(_process_chunk_with_index, indexed_chunks),
+                total=len(indexed_chunks),
+            )
+        )
 
-    for i, (success, index, a, b) in enumerate(results):
+    for chunk_idx, (success, index, a, b) in results:
         assert (
             success
-        ), f"Decoded content mismatch in chunk {i} at index {index}: {a} != {b}"
+        ), f"Decoded content mismatch in chunk {chunk_idx} at index {index}: {a} != {b}"
 
 
 def _pairwise_colorprint(seq1, seq2):
@@ -166,14 +187,11 @@ def _pairwise_colorprint(seq1, seq2):
 
 
 if __name__ == "__main__":
-    verbose = (
-        False  # Set to True for detailed output, but will be ignored in multiprocessing
-    )
     num_processes = mp.cpu_count()  # Use all available CPU cores
+    # num_processes = 1  # For debugging, set to 1 to avoid multiprocessing issues
 
     print(f"Running tests with {num_processes} processes...")
 
     input_dataset = load_dataset()
-    test_encode_decode_idempotence(input_dataset, num_processes=num_processes)
     test_corrupted_generation_decoding(input_dataset, num_processes=num_processes)
     print("All tests passed successfully.")
