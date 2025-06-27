@@ -45,7 +45,7 @@ def create_compressor():
     return LZWCompressor(
         initial_vocab_size=50257,
         max_codebook_size=2048,
-        max_subtokens=32,
+        max_subtokens=4,
         pad_token_id=50256,
         disabled_ids=[
             0,
@@ -84,6 +84,13 @@ def check_chunk_corrupted(token_chunk, lzw_compressor=None, verbose=False):
     corrupted_generation = corrupt(encoded_tokens, encoding_codebook)
     decoded_tokens, decoding_codebook = lzw_compressor.decode(corrupted_generation)
     expected_sequence = original_tokens + original_tokens
+
+    encoding_codebook_dict = encoding_codebook.to_dict()
+    decoding_codebook_dict = decoding_codebook.to_dict()
+    # check if the encoding and decoding codebooks are the identical
+    assert (
+        encoding_codebook_dict == decoding_codebook_dict
+    ), "Encoding and decoding codebooks are not identical"
 
     if verbose:
         _pairwise_colorprint(decoded_tokens, expected_sequence)
@@ -194,4 +201,5 @@ if __name__ == "__main__":
 
     input_dataset = load_dataset()
     test_corrupted_generation_decoding(input_dataset, num_processes=num_processes)
+    test_encode_decode_idempotence(input_dataset, num_processes=num_processes)
     print("All tests passed successfully.")
