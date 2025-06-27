@@ -530,6 +530,7 @@ impl LZWCompressor {
             // we just clear the buffer and continue
             if previous_ids.len() == self.config.max_subtokens {
                 assert!(codebook.contains_key(&previous_ids), "previous_ids: {:?} not in codebook: {:?}", previous_ids, codebook);
+                log::debug!("force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}", previous_ids);
                 previous_ids = decoded_ids.clone();
                 continue;
             } else {
@@ -545,7 +546,10 @@ impl LZWCompressor {
                         previous_ids = decoded_ids.clone();
                         break;
                     } else if previous_ids.len() == self.config.max_subtokens {
-                        previous_ids = decoded_ids.clone();
+                        // previous_ids = decoded_ids.clone();
+                        log::debug!("force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}", previous_ids);
+                        // previous_ids = decoded_ids without the first element, could be empty
+                        previous_ids = decoded_ids[1..].to_vec();
                         break;
                     }
 
@@ -913,6 +917,7 @@ impl CodebookManager {
             }
 
             if state.buffer_ids_to_merge.len() == config.max_subtokens {
+                log::debug!("max_subtokens reached, clearing buffer_ids_to_merge");
                 state.buffer_ids_to_merge = current_ids.clone();
                 continue;
             } else {
@@ -926,7 +931,9 @@ impl CodebookManager {
                         state.buffer_ids_to_merge = current_ids.clone();
                         break;
                     } else if state.buffer_ids_to_merge.len() == config.max_subtokens {
-                        state.buffer_ids_to_merge = current_ids.clone();
+                        log::debug!("max_subtokens reached, clearing buffer_ids_to_merge");
+                        // remove the first element
+                        state.buffer_ids_to_merge = current_ids[1..].to_vec();
                         break;
                     }
                     current_ids.remove(0);
