@@ -349,14 +349,6 @@ impl LZWCompressor {
 
         codebook.buffer_ids_to_merge = buffer_ids_to_merge.clone();
 
-        //TODO is the following code needed? will it ever happen?
-        if buffer_ids_to_merge.len() > self.config.max_subtokens {
-            let last_id = buffer_ids_to_merge.pop().unwrap();
-            get_and_push(&mut compressed_ids, &codebook, &buffer_ids_to_merge);
-            buffer_ids_to_merge.clear();
-            buffer_ids_to_merge.push(last_id);
-        }
-
         // Handle the last buffer
         if !buffer_ids_to_merge.is_empty() {
             log::debug!("force emitting buffer_ids_to_merge because reaching the end of the ids");
@@ -378,7 +370,6 @@ impl LZWCompressor {
                     compressed_ids.rotate_right(new_len - old_len);
                 }
             }
-            // TODO, what if the padding strategy is longest? we don't pad ?
             _ => {}
         }
         // Return (compressed sequence, codebook) and number of input tokens consumed
@@ -885,11 +876,6 @@ impl CodebookManager {
                 current_ids = vec![maybe_hid];
             } else if let Some(base_ids) = codebook.get_base_ids(maybe_hid) {
                 current_ids = base_ids.clone();
-                // the following are cases when the  maybe_hid is an unknown hyper-id
-                // (1) the buffer was full and it was inserted in the codebook
-            // TODO, I think the following is not needed, because
-            } else if state.buffer_ids_to_merge.len() == config.max_subtokens {
-                current_ids = state.buffer_ids_to_merge.clone();
             } else { // (2) cSc pattern
                 log::debug!("Unknown id: {}, because of cSc pattern merge", maybe_hid);
                 current_ids = state.buffer_ids_to_merge.clone();
