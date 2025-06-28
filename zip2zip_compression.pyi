@@ -83,19 +83,15 @@ class LZWCompressor:
             A tuple containing the encoded sequence, the attention mask, and the codebook.
         """
         ...
-    def decode(
-        self, compressed_ids: List[int], codebook: Optional[Codebook] = None
-    ) -> List[int]:
+    def decode(self, compressed_ids: List[int]) -> Tuple[List[int], Codebook]:
         """
         Decode (or decompress) a sequence of compressed tokens.
 
         Args:
             compressed_ids: The sequence of compressed tokens to decode.
-            codebook: The codebook to use for decoding. If not provided, the codebook will be inferred from the
-            compressed ids.
 
         Returns:
-            The decoded sequence of tokens.
+            A tuple containing the decoded sequence of tokens and the codebook.
         """
         ...
     def batch_encode(
@@ -122,18 +118,15 @@ class LZWCompressor:
     def batch_decode(
         self,
         compressed_ids: List[List[int]],
-        codebooks: Optional[List[Codebook]] = None,
-    ) -> List[List[int]]:
+    ) -> List[Tuple[List[int], Codebook]]:
         """
         Decode (or decompress) a batch of sequences of compressed tokens.
 
         Args:
             compressed_ids: The batch of sequences of compressed tokens to decode.
-            codebooks: The codebooks to use for decoding. If not provided, the codebooks will be inferred from the
-            compressed ids.
 
         Returns:
-            The decoded batch of sequences of tokens.
+            A list of tuples, each containing the decoded sequence of tokens and the corresponding codebook.
         """
         ...
 
@@ -143,9 +136,13 @@ class CodebookManager:
     with the new tokens.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: CodebookConfig, algorithm: Optional[str] = None) -> None:
         """
         Initialize the CodebookManager.
+
+        Args:
+            config: The configuration for the codebook.
+            algorithm: The algorithm to use for updating the codebook. Default is "renormalizing_lzw".
         """
         ...
     def set_codebooks(self, codebooks: List[Codebook]) -> None:
