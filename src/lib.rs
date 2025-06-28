@@ -129,7 +129,7 @@ impl Codebook {
             vec![self.config.pad_token_id; size * self.config.max_subtokens];
         let mut updates_indices: Vec<usize> = Vec::with_capacity(size);
 
-        for &id in self.updates.iter().sorted() {
+        for (update_index, &id) in self.updates.iter().sorted().enumerate() {
             let index = id - self.config.initial_vocab_size;
             let start_index = index * self.config.max_subtokens;
 
@@ -140,7 +140,8 @@ impl Codebook {
 
             let end_index = start_index + entry_length;
 
-            updates_vec[start_index..end_index]
+            let target_range = update_index * self.config.max_subtokens..update_index * self.config.max_subtokens + entry_length;
+            updates_vec[target_range.clone()]
                 .copy_from_slice(&self.merges[start_index..end_index]);
             updates_indices.push(index);
         }
