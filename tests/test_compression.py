@@ -170,3 +170,67 @@ def test_codebook_manager():
     updates, updates_indices = runtime_manager.update_codebooks(ids)
 
     print(f"\n--- {updates=} {updates_indices=}")
+
+
+def test_codebook_consistency_between_decode_and_manager():
+    """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical."""
+
+    PAD_TOKEN_ID = 0
+    config = CodebookConfig(
+        initial_vocab_size=27,
+        max_codebook_size=100,
+        max_subtokens=5,
+        pad_token_id=PAD_TOKEN_ID,
+        disabled_ids={26, PAD_TOKEN_ID},
+    )
+
+    lzw_compressor = LZWCompressor(
+        initial_vocab_size=27,
+        max_codebook_size=100,
+        max_subtokens=5,
+        pad_token_id=PAD_TOKEN_ID,
+        disabled_ids=[26, PAD_TOKEN_ID],
+    )
+
+    # Create test data
+    ids = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]
+
+    # Encode the data
+    compressed_ids, attention_mask, encode_codebook = lzw_compressor.encode(
+        ids,
+        padding="do_not_pad",
+        truncation=False,
+        max_length=None,
+    )
+
+    # Decode using lzw_compressor.decode to get the codebook
+    decoded_ids, decode_codebook = lzw_compressor.decode(compressed_ids)
+
+    # Verify the decoded ids match the original
+    assert decoded_ids == ids, "Decoded IDs should match original IDs"
+
+    # Now create a CodebookManager and update it with the same compressed ids
+    manager = RuntimeCodebookManager(config, algorithm="fault_tolerant_lzw")
+
+    # Update the manager with the compressed ids
+    for i in range(len(compressed_ids)):
+        manager.update_codebooks([[compressed_ids[i]]])
+
+    # Get the codebooks from the manager
+    manager_codebooks = manager.get_codebooks()
+
+    manager_codebook = manager_codebooks[0]
+
+    # Compare the codebooks using the to_dict() method
+    decode_dict = decode_codebook.to_dict()
+    manager_dict = manager_codebook.to_dict()
+
+    print(f"Decode codebook: {decode_dict}")
+    print(f"Manager codebook: {manager_dict}")
+
+    # The codebooks should be identical
+    assert (
+        decode_dict == manager_dict
+    ), "Codebooks from decode and manager should be identical"
+
+    print("✓ Codebooks are identical between decode and manager")
