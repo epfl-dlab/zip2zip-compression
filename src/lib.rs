@@ -496,6 +496,7 @@ impl LZWCompressor {
                 decoded_ids = previous_ids.clone();
             // 2. the id is a new hyper id because of cScSc pattern merge
             } else {
+                log::debug!("Unkown id: {}, because of cScSc pattern merge", id);
                 decoded_ids = previous_ids.clone();
                 decoded_ids.push(previous_ids[0]);
 
@@ -862,9 +863,9 @@ impl CodebookManager {
         log::debug!("arg ids: {:?}", ids);
 
         let config = &state.config;
-        if ids.len() == 1 && ids[0] == config.pad_token_id {
-            return;
-        }
+        // if ids.len() == 1 && ids[0] == config.pad_token_id {
+        //     return;
+        // }
 
         let mut codebook = state.codebook.borrow_mut(py);
 
@@ -874,6 +875,7 @@ impl CodebookManager {
             if config.disabled_ids.contains(&maybe_hid) {
                 // no need to update the codebook, because buffer_ids_to_merge is already in the codebook
                 // and buffer_ids_to_merge + maybe_hid is forbidden
+                log::debug!("Got disabled id: {}, clearing buffer_ids_to_merge", maybe_hid);
                 state.buffer_ids_to_merge.clear();
                 continue;
             }
@@ -889,6 +891,7 @@ impl CodebookManager {
             } else if state.buffer_ids_to_merge.len() == config.max_subtokens {
                 current_ids = state.buffer_ids_to_merge.clone();
             } else { // (2) cSc pattern
+                log::debug!("Unknown id: {}, because of cSc pattern merge", maybe_hid);
                 current_ids = state.buffer_ids_to_merge.clone();
                 current_ids.push(state.buffer_ids_to_merge[0]);
 
@@ -901,6 +904,7 @@ impl CodebookManager {
                 log::debug!("inserting: {:?} -> {:?}", current_ids, maybe_hid);
                 state.next_id += 1;
                 state.buffer_ids_to_merge = current_ids.clone();
+                continue;
 
             }
 
