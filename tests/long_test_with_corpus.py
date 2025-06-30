@@ -228,6 +228,10 @@ def check_codebook_consistency_during_online_generation(
     prompt_len = 500
     assert prompt_len < seq_len
 
+    # replace pad token with 1
+    token_chunk = token_chunk.to(torch.int64)
+    token_chunk[token_chunk == 50256] = 1
+
     original_sequence = token_chunk.tolist()
 
     # Encode the data
