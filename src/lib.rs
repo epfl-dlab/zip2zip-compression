@@ -856,9 +856,9 @@ impl CodebookManager {
         log::debug!("arg ids: {:?}", ids);
 
         let config = &state.config;
-        // if ids.len() == 1 && ids[0] == config.pad_token_id {
-        //     return;
-        // }
+        if ids.len() == 1 && ids[0] == config.pad_token_id {
+            return;
+        }
 
         let mut codebook = state.codebook.borrow_mut(py);
 
