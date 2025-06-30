@@ -12,15 +12,16 @@ name = "zip2zip_compression_cli"
 path = "src/main.rs"
 
 [dependencies]
-bumpalo = { version = "3.17.0", features = ["collections"] }
-hashbrown = "0.14.0"
+bumpalo = { version = "3.19.0", features = ["collections"] }
+hashbrown = "0.15.4"
 itertools = "0.14.0"
-pyo3 = { version = "0.20.0", features = ["extension-module", "hashbrown"] }
-rand = "0.8"
+pyo3 = { version = "0.24.2", features = ["extension-module", "hashbrown", "py-clone"] }
+rand = "0.9"
 rayon = "1.10.0"
 clap = { version = "4", features = ["derive"] } # CLI argument parsing
 log = "0.4"
 env_logger = "0.11"
+pyo3-tch = "0.20.0"
 
 [profile.release]
 debug = true

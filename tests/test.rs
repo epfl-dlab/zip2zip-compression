@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use zip2zip_compression::{LZWCompressor, CodebookConfig, PaddingStrategy, Codebook};
+use zip2zip_compression::{Codebook, CodebookConfig, LZWCompressor, PaddingStrategy};
 
 fn get_alphabet_codebook_config() -> CodebookConfig {
     let mut disabled_ids: HashSet<usize> = HashSet::new();
@@ -65,11 +65,14 @@ fn test_alphabet_codebook() {
 fn test_lzw_compressor() {
     let alphabet_config = get_alphabet_codebook_config();
 
-    let lzw_compressor = LZWCompressor{config: alphabet_config};
+    let lzw_compressor = LZWCompressor {
+        config: alphabet_config,
+    };
 
     // encode a simple sentence
     let ids = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
-    let ((compressed_ids, codebook), _cursor_pos) = lzw_compressor.internal_encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
+    let ((compressed_ids, codebook), _cursor_pos) =
+        lzw_compressor.internal_encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
     assert_eq!(compressed_ids, vec![1, 2, 3, 4, 5, 27, 29, 31, 28, 30]);
     assert!(codebook.base_ids2hyper_id_map.len() < ids.len() - 1);
 
