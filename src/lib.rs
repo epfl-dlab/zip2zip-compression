@@ -763,6 +763,7 @@ impl LZWCompressor {
 #[derive(Debug, Clone)]
 pub struct CodebookState {
     /// The codebook to use as a reference to a Python object.
+    #[pyo3(get)]
     codebook: Py<Codebook>,
     /// The ids to merge. This is used to create a new entry in the codebook.
     buffer_ids_to_merge: Vec<usize>,
