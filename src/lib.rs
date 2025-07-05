@@ -1,8 +1,8 @@
 use bumpalo::{collections::Vec as BumpVec, Bump};
-use std::collections::{HashMap, HashSet, BTreeMap};
 use itertools::Itertools;
 use pyo3::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// This is the config for the compression.
 #[pyclass]
@@ -73,14 +73,10 @@ pub struct Codebook {
 }
 
 impl Codebook {
-
     pub fn new(config: CodebookConfig) -> Self {
         Self {
             base_ids2hyper_id_map: HashMap::with_capacity(config.max_codebook_size),
-            merges: vec![
-                usize::MAX;
-                config.max_codebook_size * config.max_subtokens
-            ],
+            merges: vec![usize::MAX; config.max_codebook_size * config.max_subtokens],
             active_hyper_ids: HashSet::with_capacity(config.max_codebook_size),
             updates: HashSet::with_capacity(config.max_codebook_size),
             buffer_ids_to_merge: Vec::with_capacity(config.max_subtokens),
@@ -105,7 +101,8 @@ impl Codebook {
         } else {
             hyper_id
         };
-        self.base_ids2hyper_id_map.insert(base_ids.clone(), hyper_id);
+        self.base_ids2hyper_id_map
+            .insert(base_ids.clone(), hyper_id);
 
         let index = hyper_id - self.config.initial_vocab_size;
         let start_index = index * self.config.max_subtokens;
@@ -140,9 +137,9 @@ impl Codebook {
 
             let end_index = start_index + entry_length;
 
-            let target_range = update_index * self.config.max_subtokens..update_index * self.config.max_subtokens + entry_length;
-            updates_vec[target_range.clone()]
-                .copy_from_slice(&self.merges[start_index..end_index]);
+            let target_range = update_index * self.config.max_subtokens
+                ..update_index * self.config.max_subtokens + entry_length;
+            updates_vec[target_range.clone()].copy_from_slice(&self.merges[start_index..end_index]);
             updates_indices.push(index);
         }
 
@@ -197,8 +194,7 @@ impl Codebook {
         for i in 0..size {
             let start_index = i * self.config.max_subtokens;
             let end_index = start_index + self.config.max_subtokens;
-            let mut entry_vec: Vec<usize> =
-                self.merges[start_index..end_index].to_vec();
+            let mut entry_vec: Vec<usize> = self.merges[start_index..end_index].to_vec();
 
             while entry_vec.last() == Some(&usize::MAX) {
                 entry_vec.pop();
@@ -315,7 +311,10 @@ impl LZWCompressor {
                 if buffer_ids_to_merge.len() > 0 {
                     get_and_push(&mut compressed_ids, &codebook, &buffer_ids_to_merge);
                     buffer_ids_to_merge.clear();
-                    log::debug!("force emitting buffer_ids_to_merge because of disabled id: {}", id);
+                    log::debug!(
+                        "force emitting buffer_ids_to_merge because of disabled id: {}",
+                        id
+                    );
                 }
                 get_and_push(&mut compressed_ids, &codebook, &vec![id]);
                 log::debug!("emitting disabled id: {}", id);
@@ -342,7 +341,10 @@ impl LZWCompressor {
 
             // reach the max number of subtokens, emit the buffer without adding new code
             if buffer_ids_to_merge.len() == self.config.max_subtokens {
-                log::debug!("force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}", buffer_ids_to_merge);
+                log::debug!(
+                    "force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}",
+                    buffer_ids_to_merge
+                );
                 get_and_push(&mut compressed_ids, &codebook, &buffer_ids_to_merge);
                 buffer_ids_to_merge.clear();
             }
@@ -522,14 +524,20 @@ impl LZWCompressor {
             // so it must not be a new hyper id but an existing one
             // we just clear the buffer and continue
             if previous_ids.len() == self.config.max_subtokens {
-                assert!(codebook.contains_key(&previous_ids), "previous_ids: {:?} not in codebook: {:?}", previous_ids, codebook);
-                log::debug!("force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}", previous_ids);
+                assert!(
+                    codebook.contains_key(&previous_ids),
+                    "previous_ids: {:?} not in codebook: {:?}",
+                    previous_ids,
+                    codebook
+                );
+                log::debug!(
+                    "force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}",
+                    previous_ids
+                );
                 previous_ids = decoded_ids.clone();
                 continue;
             } else {
-
-                while decoded_ids.len() > 0
-                {
+                while decoded_ids.len() > 0 {
                     previous_ids.push(decoded_ids[0]);
 
                     if !codebook.contains_key(&previous_ids) {
@@ -552,7 +560,10 @@ impl LZWCompressor {
         }
 
         //print the codebook
-        log::debug!("Final codebook built from fuzzy decode: {:?}", codebook.to_dict());
+        log::debug!(
+            "Final codebook built from fuzzy decode: {:?}",
+            codebook.to_dict()
+        );
 
         (output_ids, codebook)
     }
@@ -624,7 +635,7 @@ impl LZWCompressor {
                 max_codebook_size,
                 max_subtokens,
                 pad_token_id,
-                Some(disabled_ids)
+                Some(disabled_ids),
             ),
         }
     }
@@ -672,10 +683,7 @@ impl LZWCompressor {
     /// compressed ids.
     ///
     /// Returns a list of ids.
-    pub fn decode(
-        &self,
-        compressed_ids: Vec<usize>
-    ) -> (Vec<usize>, Codebook) {
+    pub fn decode(&self, compressed_ids: Vec<usize>) -> (Vec<usize>, Codebook) {
         self.internal_fuzzy_decode(&compressed_ids)
     }
 
@@ -745,15 +753,56 @@ impl LZWCompressor {
     /// compressed ids.
     ///
     /// Returns a list of ids.
-    pub fn batch_decode(
-        &self,
-        compressed_ids: Vec<Vec<usize>>
-    ) -> Vec<(Vec<usize>, Codebook)> {
+    pub fn batch_decode(&self, compressed_ids: Vec<Vec<usize>>) -> Vec<(Vec<usize>, Codebook)> {
         compressed_ids
-                .par_iter()
-                // .map(|ids| self.internal_decode(ids))
-                .map(|ids| self.internal_fuzzy_decode(ids))
-                .collect()
+            .par_iter()
+            // .map(|ids| self.internal_decode(ids))
+            .map(|ids| self.internal_fuzzy_decode(ids))
+            .collect()
+    }
+
+    pub fn continuous_batch_encode(
+        &self,
+        ids: Vec<Vec<usize>>,
+        max_length: usize,
+        min_length: Option<usize>,
+        use_padding: Option<bool>,
+    ) -> (Vec<Vec<usize>>, Vec<Vec<Vec<usize>>>) {
+        let min_length = min_length.unwrap_or(0);
+        let use_padding = use_padding.unwrap_or(true);
+        let padding_strategy = if use_padding {
+            PaddingStrategy::MaxLength
+        } else {
+            PaddingStrategy::DoNotPad
+        };
+
+        let (compressed_ids, codebooks): (Vec<Vec<usize>>, Vec<Codebook>) = ids
+            .par_iter()
+            .flat_map(|ids| {
+                let mut offset = 0;
+                let mut chunks = Vec::new();
+                while min_length < (ids.len() - offset) {
+                    let ((c_ids, codebook), new_offset) = self.internal_encode(
+                        &ids,
+                        offset,
+                        padding_strategy,
+                        true,
+                        Some(max_length),
+                    );
+
+                    offset = new_offset;
+                    chunks.push((c_ids, codebook));
+                }
+                chunks
+            })
+            .unzip();
+
+        let codebooks_as_lists = codebooks
+            .par_iter()
+            .map(|codebook| codebook.to_list(use_padding))
+            .collect();
+
+        (compressed_ids, codebooks_as_lists)
     }
 }
 
@@ -846,12 +895,7 @@ impl CodebookManager {
         }
     }
 
-
-    fn internal_fuzzy_update_codebook(
-        py: Python<'_>,
-        state: &mut CodebookState,
-        ids: &[usize],
-    ) {
+    fn internal_fuzzy_update_codebook(py: Python<'_>, state: &mut CodebookState, ids: &[usize]) {
         log::debug!("Hitting fn internal_fuzzy_update_codebook");
         log::debug!("arg ids: {:?}", ids);
 
@@ -868,7 +912,10 @@ impl CodebookManager {
             if config.disabled_ids.contains(&maybe_hid) {
                 // no need to update the codebook, because buffer_ids_to_merge is already in the codebook
                 // and buffer_ids_to_merge + maybe_hid is forbidden
-                log::debug!("Got disabled id: {}, clearing buffer_ids_to_merge", maybe_hid);
+                log::debug!(
+                    "Got disabled id: {}, clearing buffer_ids_to_merge",
+                    maybe_hid
+                );
                 state.buffer_ids_to_merge.clear();
                 continue;
             }
@@ -878,7 +925,8 @@ impl CodebookManager {
                 current_ids = vec![maybe_hid];
             } else if let Some(base_ids) = codebook.get_base_ids(maybe_hid) {
                 current_ids = base_ids.clone();
-            } else { // (2) cSc pattern
+            } else {
+                // (2) cSc pattern
                 log::debug!("Unknown id: {}, because of cSc pattern merge", maybe_hid);
                 current_ids = state.buffer_ids_to_merge.clone();
                 current_ids.push(state.buffer_ids_to_merge[0]);
@@ -893,7 +941,6 @@ impl CodebookManager {
                 state.next_id += 1;
                 state.buffer_ids_to_merge = current_ids.clone();
                 continue;
-
             }
 
             if state.next_id == config.initial_vocab_size + config.max_codebook_size {
@@ -913,12 +960,16 @@ impl CodebookManager {
                 state.buffer_ids_to_merge = current_ids.clone();
                 continue;
             } else {
-                while  current_ids.len() > 0 {
+                while current_ids.len() > 0 {
                     state.buffer_ids_to_merge.push(current_ids[0]);
 
                     if !codebook.contains_key(&state.buffer_ids_to_merge) {
                         codebook.insert(state.buffer_ids_to_merge.clone(), state.next_id);
-                        log::debug!("inserting: {:?} -> {:?}", state.buffer_ids_to_merge, state.next_id);
+                        log::debug!(
+                            "inserting: {:?} -> {:?}",
+                            state.buffer_ids_to_merge,
+                            state.next_id
+                        );
                         state.next_id += 1;
                         state.buffer_ids_to_merge = current_ids.clone();
                         break;
@@ -1013,37 +1064,36 @@ impl CodebookManager {
             }
 
             self.set_codebooks(codebooks);
-        }// renormalizing_lzw requires the codebook to be initialized with codebook from the tokenizer
+        } // renormalizing_lzw requires the codebook to be initialized with codebook from the tokenizer
 
         assert_eq!(ids.len(), self.states.len());
         let max_ids_length = ids.iter().map(|i| i.len()).max().unwrap();
 
-
         let (mut updates, updates_indices): (Vec<Vec<usize>>, Vec<Vec<usize>>) = self
-        .states
-        .iter_mut()
-        .zip(ids.iter())
-        .map(|(state, ids)| {
-            // choose the implementation for every call, even the first one
-            match self.algorithm.as_str() {
-                "fault_tolerant_lzw"   => {
-                    CodebookManager::internal_fuzzy_update_codebook(py, state, ids)
-                }
-                "renormalizing_lzw" => {
-                    if !self.first_updates {
-                        CodebookManager::internal_update_codebook(py, state, ids)
+            .states
+            .iter_mut()
+            .zip(ids.iter())
+            .map(|(state, ids)| {
+                // choose the implementation for every call, even the first one
+                match self.algorithm.as_str() {
+                    "fault_tolerant_lzw" => {
+                        CodebookManager::internal_fuzzy_update_codebook(py, state, ids)
                     }
+                    "renormalizing_lzw" => {
+                        if !self.first_updates {
+                            CodebookManager::internal_update_codebook(py, state, ids)
+                        }
+                    }
+                    _ => panic!("Invalid algorithm: {}", self.algorithm),
                 }
-                _ => panic!("Invalid algorithm: {}", self.algorithm),
-            }
 
-            // collect buffered updates from this state's codebook
-            state
-                .codebook
-                .borrow_mut(py)
-                .get_updates(self.first_updates)   // still tell it whether this was the first call
-        })
-        .unzip();
+                // collect buffered updates from this state's codebook
+                state
+                    .codebook
+                    .borrow_mut(py)
+                    .get_updates(self.first_updates) // still tell it whether this was the first call
+            })
+            .unzip();
 
         // If the sequence is only one token (not the first one), we need to
         // pad the updates to the longest sequence in the batch.
@@ -1065,7 +1115,7 @@ impl CodebookManager {
     pub fn get_codebooks(&self) -> Vec<Py<Codebook>> {
         self.states
             .iter()
-            .map(|st| st.codebook.clone())   // clone the Py<…> handle
+            .map(|st| st.codebook.clone()) // clone the Py<…> handle
             .collect()
     }
 
@@ -1086,7 +1136,6 @@ impl CodebookManager {
         self.states.clear();
     }
 }
-
 
 #[pymodule]
 fn zip2zip_compression(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
