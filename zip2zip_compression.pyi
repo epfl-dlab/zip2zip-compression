@@ -130,6 +130,30 @@ class LZWCompressor:
         """
         ...
 
+    def continuous_batch_encode(
+        self,
+        ids: List[List[int]],
+        max_length: int,
+        min_length: Optional[int] = 0,
+        use_padding: Optional[bool] = True,
+    ) -> Tuple[List[List[int]], List[List[List[int]]]]:
+        """
+        Encode a batch of sequences of tokens in a continuous manner. This method will try to consume
+        the sequences as much as possible, and return the compressed ids and the codebooks.
+
+        Args:
+            ids: The batch of sequences of tokens to encode.
+            max_length: The maximum length of the sequences.
+            min_length: The minimum length of the sequences. This can be used to limit the padding
+            and discard the sequences that are too short. Default is 0.
+            use_padding: If the compressed ids are padded to the `max_length` and the codebooks are
+            padded to the maximum size (max subtokens, and max entries).
+
+        Returns:
+            A tuple containing the compressed ids and the codebooks.
+        """
+        ...
+
 class CodebookManager:
     """
     Class for managing the codebooks. During generation, the codebook manager will update the codebooks
