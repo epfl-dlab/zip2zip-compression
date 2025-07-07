@@ -67,6 +67,10 @@ def load_dataset(sequence_length=10_000, num_chunks=None):
         nbytes = f.readinto(tokens.numpy())
         assert nbytes == 2 * num_tokens, "number of tokens read does not match header"
 
+    # replace pad token with 1
+    tokens = tokens.to(torch.int64)
+    tokens[tokens == 50256] = 1
+
     if num_chunks is None:
         return tokens.view(-1, sequence_length)
     else:
@@ -227,10 +231,6 @@ def check_codebook_consistency_during_online_generation(
     seq_len = 10000
     prompt_len = 500
     assert prompt_len < seq_len
-
-    # replace pad token with 1
-    token_chunk = token_chunk.to(torch.int64)
-    token_chunk[token_chunk == 50256] = 1
 
     original_sequence = token_chunk.tolist()
 
