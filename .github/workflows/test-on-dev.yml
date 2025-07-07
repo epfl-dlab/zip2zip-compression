@@ -28,7 +28,7 @@ jobs:
 
     - name: Install Python dependencies and package
       run: |
-        pip install pytest torch huggingface_hub tqdm
+        pip install pytest torch huggingface_hub tqdm numpy
         pip install .
 
     - name: Run Python tests
