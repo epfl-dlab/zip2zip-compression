@@ -186,7 +186,7 @@ impl Codebook {
     pub fn to_list(&self, use_padding: bool) -> Vec<Vec<usize>> {
         let mut result = Vec::with_capacity(self.base_ids2hyper_id_map.len());
         let size = if use_padding {
-            self.config.max_codebook_size / self.config.max_subtokens
+            self.config.max_codebook_size
         } else {
             self.base_ids2hyper_id_map.len()
         };
