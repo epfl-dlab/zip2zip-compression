@@ -265,7 +265,7 @@ def check_codebook_consistency_during_online_generation(
 @pytest.fixture(scope="module")
 def dataset():
     """Fixture to load the dataset once for all tests."""
-    return load_dataset()
+    return load_dataset(num_chunks=100)
 
 
 # @pytest.fixture(scope="module")
@@ -274,7 +274,7 @@ def lzw_compressor():
     return create_builtin_compressor()
 
 
-def parallel_test_encode_decode_idempotence(
+def test_encode_decode_idempotence(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that encoding and then decoding preserves the original token sequence."""
@@ -316,8 +316,8 @@ def _process_test_decoding_corrupted_compression(args):
     return idx, check_decoding_corrupted_compression(chunk, verbose=VERBOSE)
 
 
-def parallel_test_decoding_corrupted_compression(
-    token_chunks, *, lzw_compressor=None, num_processes=None
+def test_decoding_corrupted_compression(
+    dataset, *, lzw_compressor=None, num_processes=None
 ):
     """
     Test decoding of a sequence that is a concatenation of encoded tokens and a 'corrupted' generation.
@@ -326,7 +326,7 @@ def parallel_test_decoding_corrupted_compression(
     if num_processes is None:
         num_processes = mp.cpu_count()
 
-    indexed_chunks = list(enumerate(token_chunks))  # [(0, chunk0), (1, chunk1), ...]
+    indexed_chunks = list(enumerate(dataset))  # [(0, chunk0), (1, chunk1), ...]
     with mp.Pool(processes=num_processes) as pool:
         results = list(
             tqdm(
@@ -341,7 +341,7 @@ def parallel_test_decoding_corrupted_compression(
         ), f"Decoded content mismatch in chunk {chunk_idx} at index {index}: {a} != {b}"
 
 
-def parallel_test_codebook_consistency_between_offline_and_online_decode(
+def test_codebook_consistency_between_offline_and_online_decode(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical using real-world corpus."""
@@ -361,7 +361,7 @@ def parallel_test_codebook_consistency_between_offline_and_online_decode(
         ), f"Codebook consistency check failed in chunk {i} at index {index}: {error_msg} (a={a}, b={b})"
 
 
-def parallel_test_codebook_consistency_during_online_generation(
+def test_codebook_consistency_during_online_generation(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical during online generation."""
@@ -393,29 +393,4 @@ def _pairwise_colorprint(seq1, seq2):
         if equal:
             print(f"{GREEN}{a} {sign} {b}{RESET}")
         else:
-            print(f"{RED}{a} {sign} {b}{RESET}")
-
-
-if __name__ == "__main__":
-    num_processes = mp.cpu_count()
-
-    print(f"Running tests with {num_processes} processes...")
-
-    input_dataset = load_dataset(num_chunks=1000)  # total number is 10_000
-    parallel_test_decoding_corrupted_compression(
-        input_dataset, num_processes=num_processes
-    )
-    print("Decoding corrupted compression test passed successfully.")
-    parallel_test_encode_decode_idempotence(input_dataset, num_processes=num_processes)
-    print("Encode/decode idempotence test passed successfully.")
-    parallel_test_codebook_consistency_between_offline_and_online_decode(
-        input_dataset, num_processes=num_processes
-    )
-    print(
-        "Codebook consistency test between offline and online decode passed successfully."
-    )
-    parallel_test_codebook_consistency_during_online_generation(
-        input_dataset, num_processes=num_processes
-    )
-    print("Codebook consistency test during online generation passed successfully.")
-    print("All tests passed successfully.")
+            print(f"{RED}{a} {sign} {b}{RESET}") 
