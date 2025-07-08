@@ -21,7 +21,10 @@ rayon = "1.10.0"
 clap = { version = "4", features = ["derive"] } # CLI argument parsing
 log = "0.4"
 env_logger = "0.11"
-pyo3-tch = "0.20.0"
+
+[dev-dependencies]
+hf-hub = "0.4.3"
+tqdm = "0.8.0"
 
 [profile.release]
 debug = true

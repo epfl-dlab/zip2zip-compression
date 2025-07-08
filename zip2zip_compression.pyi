@@ -25,9 +25,15 @@ class Codebook:
             The codebook as a list of lists.
         """
         ...
-    def to_dict(self) -> Dict[int, List[int]]:
+    def get_subtokens(self, id: int) -> Optional[List[int]]:
         """
-        Get the decoding dictionary for the codebook.
+        Get the subtokens for a given token id.
+
+        Args:
+            id: The token id.
+
+        Returns:
+            The subtokens for the given token id.
         """
         ...
 

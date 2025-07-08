@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-use zip2zip_compression::{CompressionState, LZWCompressor, PaddingStrategy};
+use zip2zip_compression::{LZWCompressor, PaddingStrategy};
 
 #[derive(Parser, Debug)]
 #[command(name = "LZW Compressor")]
@@ -98,15 +98,8 @@ fn main() {
     );
 
     let start = Instant::now();
-    let mut encoder_state = CompressionState::new_from_compressor(&compressor);
-    let (compressed_ids, i) = LZWCompressor::encode(
-        &mut encoder_state,
-        &ids,
-        0,
-        PaddingStrategy::DoNotPad,
-        false,
-        None,
-    );
+    let (compressed_ids, encoder_state) =
+        compressor.encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
     let encode_time = start.elapsed();
 
     println!(
@@ -116,8 +109,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let mut decoder_state = CompressionState::new_from_compressor(&compressor);
-    let decoded_ids = LZWCompressor::decode(&mut decoder_state, &compressed_ids);
+    let (decoded_ids, _) = compressor.decode(&compressed_ids);
     let decode_time = start.elapsed();
 
     println!(
@@ -145,9 +137,6 @@ fn main() {
 
     // print codebook
     println!("codebook: {:?}", encoder_state.codebook.inner);
-
-    // print i
-    println!("i: {:?}", i);
 
     println!(
         "✔ Compression successful. Compression ratio: {:.2}x ({} → {})",

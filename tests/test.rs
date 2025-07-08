@@ -1,13 +1,17 @@
-use std::collections::{HashMap, HashSet};
-use zip2zip_compression::{Codebook, CodebookConfig, LZWCompressor, PaddingStrategy};
+mod utils;
 
-fn get_alphabet_codebook_config() -> CodebookConfig {
+use tqdm::Iter;
+use utils::get_tokens;
+use std::collections::{HashMap, HashSet};
+use zip2zip_compression::{Codebook, CompressionConfig, LZWCompressor, PaddingStrategy};
+
+fn get_alphabet_compression_config() -> CompressionConfig {
     let mut disabled_ids: HashSet<usize> = HashSet::new();
     disabled_ids.insert(26); // 'z'
     disabled_ids.insert(0); // '\0' padding token
 
     // 26 letters + 1 for the pad token
-    CodebookConfig::new(27, 100, 5, 0, Some(disabled_ids))
+    CompressionConfig::new(27, 100, 5, 0, disabled_ids)
 }
 
 fn get_base_letter_to_id_map() -> HashMap<char, usize> {
@@ -22,7 +26,7 @@ fn get_base_letter_to_id_map() -> HashMap<char, usize> {
 
 #[test]
 fn test_alphabet_codebook_config() {
-    let alphabet_codebook_config = get_alphabet_codebook_config();
+    let alphabet_codebook_config = get_alphabet_compression_config();
 
     assert_eq!(alphabet_codebook_config.initial_vocab_size, 27);
     assert_eq!(alphabet_codebook_config.max_codebook_size, 100);
@@ -32,9 +36,9 @@ fn test_alphabet_codebook_config() {
 
 #[test]
 fn test_alphabet_codebook() {
-    let alphabet_config = get_alphabet_codebook_config();
+    let alphabet_config = get_alphabet_compression_config();
 
-    let mut alphabet_codebook = Codebook::new(alphabet_config);
+    let mut alphabet_codebook = Codebook::new(&alphabet_config);
 
     //insert a few entries
     alphabet_codebook.insert(vec![1, 2], 0);
@@ -53,17 +57,17 @@ fn test_alphabet_codebook() {
     assert!(alphabet_codebook.contains_key(&vec![1, 2]));
 
     //get the base ids
-    let base_ids = alphabet_codebook.get_base_ids(27).unwrap();
+    let base_ids = alphabet_codebook.get_subtokens(27).unwrap();
     assert_eq!(base_ids, vec![1, 2]);
 
     //get the base ids
-    let base_ids = alphabet_codebook.get_base_ids(29).unwrap();
+    let base_ids = alphabet_codebook.get_subtokens(29).unwrap();
     assert_eq!(base_ids, vec![3, 4, 5]);
 }
 
 #[test]
 fn test_lzw_compressor() {
-    let alphabet_config = get_alphabet_codebook_config();
+    let alphabet_config = get_alphabet_compression_config();
 
     let lzw_compressor = LZWCompressor {
         config: alphabet_config,
@@ -71,12 +75,12 @@ fn test_lzw_compressor() {
 
     // encode a simple sentence
     let ids = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
-    let ((compressed_ids, codebook), _cursor_pos) =
-        lzw_compressor.internal_encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
+    let (compressed_ids, state) =
+        lzw_compressor.encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
     assert_eq!(compressed_ids, vec![1, 2, 3, 4, 5, 27, 29, 31, 28, 30]);
-    assert!(codebook.base_ids2hyper_id_map.len() < ids.len() - 1);
+    assert!(state.codebook.inner.len() < ids.len() - 1);
 
-    let alphabet_config = get_alphabet_codebook_config();
+    let alphabet_config = get_alphabet_compression_config();
 
     let lzw_compressor2 = LZWCompressor::new(
         alphabet_config.initial_vocab_size,
@@ -87,6 +91,25 @@ fn test_lzw_compressor() {
     );
 
     //  now decode the compressed ids
-    let (decoded_ids, _codebook) = lzw_compressor2.internal_decode(&compressed_ids);
+    let (decoded_ids, _) = lzw_compressor2.decode(&compressed_ids);
     assert_eq!(decoded_ids, ids);
+}
+
+#[test]
+fn test_encode_decode() {
+    let ids = get_tokens();
+
+    let lzw_compressor = LZWCompressor::new(
+        50257,
+        1024,
+        4,
+        50256,
+        None,
+    );
+
+    for chunk in ids.chunks(2048).take(1000).map(|chunk| chunk.to_vec()).tqdm() {
+        let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let (decoded_ids, _) = lzw_compressor.decode(&compressed_ids);
+        assert_eq!(decoded_ids, chunk);
+    }
 }
