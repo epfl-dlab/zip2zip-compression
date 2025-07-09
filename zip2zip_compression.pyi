@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 class CodebookConfig:
     """
@@ -25,6 +25,13 @@ class Codebook:
             The codebook as a list of lists.
         """
         ...
+
+    def to_dict(self) -> Dict[int, List[int]]:
+        """
+        Get the codebook as a dictionary.
+        """
+        ...
+
     def get_subtokens(self, id: int) -> Optional[List[int]]:
         """
         Get the subtokens for a given token id.

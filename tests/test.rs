@@ -107,9 +107,11 @@ fn test_encode_decode() {
         None,
     );
 
-    for chunk in ids.chunks(2048).take(1000).map(|chunk| chunk.to_vec()).tqdm() {
-        let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
-        let (decoded_ids, _) = lzw_compressor.decode(&compressed_ids);
-        assert_eq!(decoded_ids, chunk);
+    for chunk_size in [4096, 2048, 1024, 512, 256, 128, 64, 32] {
+        for chunk in ids.chunks(chunk_size).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
+            let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+            let (decoded_ids, _) = lzw_compressor.decode(&compressed_ids);
+            assert_eq!(decoded_ids, chunk);
+        }
     }
 }

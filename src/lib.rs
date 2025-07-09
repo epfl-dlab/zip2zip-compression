@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use pyo3::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// This is the config for the compression.
 #[pyclass(get_all)]
@@ -120,6 +120,21 @@ impl Codebook {
             );
         }
 
+        result
+    }
+
+    /// Convert the codebook to a dictionary.
+    ///
+    /// The key is the hyper id and the value is the list of base ids that are merged to form the hyper id.
+    ///
+    /// The hyper id is the id of the hyper token.
+    ///
+    /// The base ids are the ids of the base tokens that are merged to form the hyper token.
+    pub fn to_dict(&self) -> BTreeMap<usize, Vec<usize>> {
+        let mut result = BTreeMap::new();
+        for (ids, id) in self.inner.iter() {
+            result.insert(*id, ids.clone());
+        }
         result
     }
 
