@@ -33,8 +33,9 @@ impl CompressionConfig {
         max_codebook_size: usize,
         max_subtokens: usize,
         pad_token_id: usize,
-        mut disabled_ids: HashSet<usize>,
+        disabled_ids: Option<Vec<usize>>,
     ) -> Self {
+        let mut disabled_ids = disabled_ids.map_or_else(|| HashSet::new(), |d_ids| d_ids.into_iter().collect());
         disabled_ids.insert(pad_token_id);
 
         Self {
@@ -574,9 +575,6 @@ impl LZWCompressor {
         pad_token_id: usize,
         disabled_ids: Option<Vec<usize>>,
     ) -> Self {
-        let disabled_ids =
-            disabled_ids.map_or_else(|| HashSet::new(), |d_ids| d_ids.into_iter().collect());
-
         Self {
             config: CompressionConfig::new(
                 initial_vocab_size,

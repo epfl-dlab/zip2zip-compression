@@ -2,16 +2,12 @@ mod utils;
 
 use tqdm::Iter;
 use utils::get_tokens;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use zip2zip_compression::{Codebook, CompressionConfig, LZWCompressor, PaddingStrategy};
 
 fn get_alphabet_compression_config() -> CompressionConfig {
-    let mut disabled_ids: HashSet<usize> = HashSet::new();
-    disabled_ids.insert(26); // 'z'
-    disabled_ids.insert(0); // '\0' padding token
-
     // 26 letters + 1 for the pad token
-    CompressionConfig::new(27, 100, 5, 0, disabled_ids)
+    CompressionConfig::new(27, 100, 5, 0, Some(vec![26, 0]))
 }
 
 fn get_base_letter_to_id_map() -> HashMap<char, usize> {
