@@ -1,11 +1,12 @@
 use itertools::Itertools;
-use pyo3::prelude::*;
+use pyo3::{exceptions, prelude::*, types::{PyBytes}};
+use serde::{Deserialize, Serialize};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// This is the config for the compression.
-#[pyclass(get_all)]
-#[derive(Debug, Clone)]
+#[pyclass(get_all, module = "zip2zip_compression")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompressionConfig {
     /// The size of the vocabulary of the pre-trained tokenizer. This size
     /// includes also the added tokens.
@@ -46,7 +47,7 @@ impl CompressionConfig {
 
 /// This struct contains the state of the compression (encoding). This is
 /// returned to the Python runtime to be used with the `CodebookManager`.
-#[pyclass]
+#[pyclass(module = "zip2zip_compression")]
 #[derive(Debug, Clone)]
 pub struct Codebook {
     /// The actual compression (encoding) codebook.
@@ -476,7 +477,8 @@ pub enum PaddingStrategy {
     DoNotPad,
 }
 
-#[pyclass]
+#[pyclass(module = "zip2zip_compression")]
+#[derive(Clone)]
 pub struct LZWCompressor {
     pub config: CompressionConfig,
 }
@@ -581,6 +583,29 @@ impl LZWCompressor {
                 pad_token_id,
                 disabled_ids,
             ),
+        }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        let data = serde_json::to_string(&self.config).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while attempting to pickle LZWCompressor: {e}"
+            ))
+        })?;
+        Ok(PyBytes::new(py, data.as_bytes()).into())
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&[u8]>(py) {
+            Ok(s) => {
+                self.config = serde_json::from_slice(s).map_err(|e| {
+                    exceptions::PyException::new_err(format!(
+                        "Error while attempting to unpickle LZWCompressor: {e}"
+                    ))
+                })?;
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -782,7 +807,7 @@ impl LZWCompressor {
 /// The codebbok manager is a struct used to continue the creation of the codebook
 /// during the generation. The codebook is initialized when compressing (encoding)
 /// the input, but the model should be able to use hyper-tokens from the generation.
-#[pyclass]
+#[pyclass(module = "zip2zip_compression")]
 pub struct CodebookManager {
     /// The states of the elements in the batch.
     states: Vec<CompressionState>,

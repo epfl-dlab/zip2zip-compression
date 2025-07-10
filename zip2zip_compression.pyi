@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Tuple, Union
 
-class CodebookConfig:
+class CompressionConfig:
     """
     Class for storing the configuration of the codebook.
     """
@@ -173,7 +173,7 @@ class CodebookManager:
     with the new tokens.
     """
 
-    def __init__(self, config: CodebookConfig, algorithm: Optional[str] = None) -> None:
+    def __init__(self, config: CompressionConfig, algorithm: Optional[str] = None) -> None:
         """
         Initialize the CodebookManager.
 

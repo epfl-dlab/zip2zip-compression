@@ -2597,5 +2597,7 @@ dependencies = [
  "pyo3",
  "rand",
  "rayon",
+ "serde",
+ "serde_json",
  "tqdm",
 ]
