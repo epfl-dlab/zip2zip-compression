@@ -25,7 +25,9 @@ pub struct CompressionConfig {
     pub disabled_ids: HashSet<usize>,
 }
 
+#[pymethods]
 impl CompressionConfig {
+    #[new]
     pub fn new(
         initial_vocab_size: usize,
         max_codebook_size: usize,

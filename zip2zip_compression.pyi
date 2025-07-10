@@ -5,7 +5,15 @@ class CompressionConfig:
     Class for storing the configuration of the codebook.
     """
 
-    ...
+    def __init__(
+        self,
+        initial_vocab_size: int,
+        max_codebook_size: int,
+        max_subtokens: int,
+        pad_token_id: int,
+        disabled_ids: Optional[List[int]] = None,
+    ) -> None:
+        ...
 
 class Codebook:
     """
@@ -173,13 +181,12 @@ class CodebookManager:
     with the new tokens.
     """
 
-    def __init__(self, config: CompressionConfig, algorithm: Optional[str] = None) -> None:
+    def __init__(self, config: CompressionConfig) -> None:
         """
         Initialize the CodebookManager.
 
         Args:
             config: The configuration for the codebook.
-            algorithm: The algorithm to use for updating the codebook. Default is "renormalizing_lzw".
         """
         ...
     def set_codebooks(self, codebooks: List[Codebook]) -> None:
