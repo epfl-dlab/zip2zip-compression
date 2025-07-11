@@ -31,7 +31,7 @@ pub fn get_tokens() -> Vec<usize> {
         "magic number mismatch in the data .bin file"
     );
     assert!(header[1] == 1, "unsupported version");
-    
+
     let num_tokens = header[2] as usize;
     assert!(num_tokens == ids.len(), "number of tokens mismatch");
 

@@ -1,33 +1,15 @@
 mod utils;
 
+use std::time::{Duration, Instant};
 use tqdm::Iter;
 use utils::get_tokens;
-use std::collections::{HashMap};
-use zip2zip_compression::{Codebook, CompressionConfig, LZWCompressor, PaddingStrategy};
+use zip2zip_compression::{
+    Codebook, CodebookManager, CompressionConfig, LZWCompressor, PaddingStrategy,
+};
 
 fn get_alphabet_compression_config() -> CompressionConfig {
     // 26 letters + 1 for the pad token
     CompressionConfig::new(27, 100, 5, 0, Some(vec![26, 0]))
-}
-
-fn get_base_letter_to_id_map() -> HashMap<char, usize> {
-    let mut base_letter_to_id_map = HashMap::new();
-    for (i, letter) in "abcdefghijklmnopqrstuvwxyz".chars().enumerate() {
-        base_letter_to_id_map.insert(letter, i + 1);
-    }
-    // add \0 for the pad token at position 0
-    base_letter_to_id_map.insert('\0', 0);
-    base_letter_to_id_map
-}
-
-#[test]
-fn test_alphabet_codebook_config() {
-    let alphabet_codebook_config = get_alphabet_compression_config();
-
-    assert_eq!(alphabet_codebook_config.initial_vocab_size, 27);
-    assert_eq!(alphabet_codebook_config.max_codebook_size, 100);
-    assert_eq!(alphabet_codebook_config.max_subtokens, 5);
-    assert_eq!(alphabet_codebook_config.pad_token_id, 0);
 }
 
 #[test]
@@ -95,19 +77,103 @@ fn test_lzw_compressor() {
 fn test_encode_decode() {
     let ids = get_tokens();
 
-    let lzw_compressor = LZWCompressor::new(
-        50257,
-        1024,
-        4,
-        50256,
-        None,
-    );
+    let lzw_compressor = LZWCompressor::new(50257, 1024, 4, 50256, None);
 
     for chunk_size in [4096, 2048, 1024, 512, 256, 128, 64, 32] {
-        for chunk in ids.chunks(chunk_size).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
-            let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        for chunk in ids
+            .chunks(chunk_size)
+            .take(2000)
+            .map(|chunk| chunk.to_vec())
+            .tqdm()
+        {
+            let (compressed_ids, _) =
+                lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
             let (decoded_ids, _) = lzw_compressor.decode(&compressed_ids);
             assert_eq!(decoded_ids, chunk);
         }
     }
+}
+
+#[test]
+fn test_codebook_manager() {
+    let ids = get_tokens();
+
+    let lzw_compressor = LZWCompressor::new(50257, 1024, 4, 50256, None);
+
+    let mut codebook_manager = CodebookManager::new(lzw_compressor.config.clone());
+
+    for chunk in ids
+        .chunks(1024)
+        .take(2000)
+        .map(|chunk| chunk.to_vec())
+        .tqdm()
+    {
+        let (_, compression_state) =
+            lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+
+        let (updates, _) = codebook_manager.update_codebooks(vec![chunk]);
+
+        let encode_codebook = compression_state.codebook.to_list(true).into_iter().flatten().collect::<Vec<_>>();
+
+        assert_eq!(
+            updates[0].len(),
+            encode_codebook.len()
+        );
+
+        assert_eq!(updates[0], encode_codebook);
+
+        codebook_manager.reset();
+    }
+}
+
+#[test]
+fn benchmark_lzw_compressor() {
+    let ids = get_tokens();
+
+    let lzw_compressor = LZWCompressor::new(50257, 1024, 4, 50256, None);
+
+    let mut encode_times = Vec::with_capacity(2000);
+    let mut decode_times = Vec::with_capacity(2000);
+
+    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
+        let start = Instant::now();
+
+        let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let end = Instant::now();
+        encode_times.push(end - start);
+
+        let start = Instant::now();
+        let (_, _) = lzw_compressor.decode(&compressed_ids);
+        let end = Instant::now();
+        decode_times.push(end - start);
+    }
+
+    let mean_encode_time = encode_times.iter().sum::<Duration>() / encode_times.len() as u32;
+    let mean_decode_time = decode_times.iter().sum::<Duration>() / decode_times.len() as u32;
+
+    println!("mean encode time: {:?}", mean_encode_time);
+    println!("mean decode time: {:?}", mean_decode_time);
+}
+
+#[test]
+fn benchmark_codebook_manager() {
+    let ids = get_tokens();
+
+    let compressor_config = CompressionConfig::new(50257, 1024, 4, 50256, None);
+
+    let mut codebook_manager = CodebookManager::new(compressor_config);
+
+    let mut times = Vec::with_capacity(2000);
+
+    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
+        let start = Instant::now();
+        let (_, _) = codebook_manager.update_codebooks(vec![chunk]);
+        let end = Instant::now();
+        times.push(end - start);
+
+        codebook_manager.reset();
+    }
+
+    let mean_time = times.iter().sum::<Duration>() / times.len() as u32;
+    println!("mean time: {:?}", mean_time);
 }

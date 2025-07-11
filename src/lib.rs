@@ -1,7 +1,7 @@
 use itertools::Itertools;
-use pyo3::{exceptions, prelude::*, types::{PyBytes}};
-use serde::{Deserialize, Serialize};
+use pyo3::{exceptions, prelude::*, types::PyBytes};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// This is the config for the compression.
@@ -35,7 +35,8 @@ impl CompressionConfig {
         pad_token_id: usize,
         disabled_ids: Option<Vec<usize>>,
     ) -> Self {
-        let mut disabled_ids = disabled_ids.map_or_else(|| HashSet::new(), |d_ids| d_ids.into_iter().collect());
+        let mut disabled_ids =
+            disabled_ids.map_or_else(|| HashSet::new(), |d_ids| d_ids.into_iter().collect());
         disabled_ids.insert(pad_token_id);
 
         Self {
@@ -97,12 +98,6 @@ impl Codebook {
 #[pymethods]
 impl Codebook {
     /// Convert the codebook to a list of lists.
-    ///
-    /// If `use_padding` is true, the codebook will be padded to the
-    /// `max_codebook_size` / `max_subtokens`.
-    ///
-    /// If `use_padding` is false, the codebook will be truncated to the
-    /// `inner.len()`.
     pub fn to_list(&self, use_padding: bool) -> Vec<Vec<usize>> {
         let mut result = Vec::with_capacity(self.inner.len());
 
@@ -117,9 +112,8 @@ impl Codebook {
         }
 
         if use_padding {
-            let size = self.config.max_codebook_size / self.config.max_subtokens;
             result.resize(
-                size,
+                self.config.max_codebook_size,
                 vec![self.config.pad_token_id; self.config.max_subtokens],
             );
         }
@@ -390,7 +384,7 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
             decoded_ids = state.buffer.clone();
             decoded_ids.push(state.buffer[0]);
 
-            state.codebook.insert(decoded_ids.clone(), id);
+            state.insert(decoded_ids.clone(), id);
             log::debug!("inserting: {:?} -> {:?}", decoded_ids, id);
             state.next_id += 1;
             state.buffer = decoded_ids.clone();
@@ -421,7 +415,7 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
         // we just clear the buffer and continue
         if state.buffer.len() == state.config.max_subtokens {
             assert!(
-                state.codebook.contains_key(&state.buffer),
+                state.contains_key(&state.buffer),
                 "previous_ids: {:?} not in codebook: {:?}",
                 state.buffer,
                 state.codebook
@@ -436,8 +430,8 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
             while decoded_ids.len() > 0 {
                 state.buffer.push(decoded_ids[0]);
 
-                if !state.codebook.contains_key(&state.buffer) {
-                    state.codebook.insert(state.buffer.clone(), state.next_id);
+                if !state.contains_key(&state.buffer) {
+                    state.insert(state.buffer.clone(), state.next_id);
                     log::debug!("inserting: {:?} -> {:?}", state.buffer, state.next_id);
                     state.next_id += 1;
                     state.buffer = decoded_ids.clone();
@@ -848,10 +842,7 @@ impl CodebookManager {
     /// The `ids` is the list of ids to update the codebooks with.
     ///
     /// Returns a tuple containing the updates and the indices of the updates.
-    pub fn update_codebooks(
-        &mut self,
-        ids: Vec<Vec<usize>>,
-    ) -> PyResult<(Vec<Vec<usize>>, Vec<Vec<usize>>)> {
+    pub fn update_codebooks(&mut self, ids: Vec<Vec<usize>>) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
         log::debug!("Hitting fn update_codebooks");
         log::debug!("arg ids: {:?}", ids);
         // init the codebook for the first time, this depends on the batch, so it
@@ -861,6 +852,7 @@ impl CodebookManager {
                 .iter()
                 .map(|_| CompressionState::new(self.config.clone()))
                 .collect();
+            self.first_updates = true;
         }
 
         assert_eq!(ids.len(), self.states.len());
@@ -891,7 +883,7 @@ impl CodebookManager {
         }
         self.first_updates = false;
 
-        Ok((updates, updates_indices))
+        (updates, updates_indices)
     }
 
     pub fn get_codebooks(&self, py: Python<'_>) -> Vec<Py<Codebook>> {
