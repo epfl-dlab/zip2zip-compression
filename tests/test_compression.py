@@ -1,7 +1,6 @@
 import pytest
-from zip2zip_compression import LZWCompressor, CodebookConfig
+from zip2zip_compression import LZWCompressor, CompressionConfig
 from zip2zip_compression import CodebookManager as RuntimeCodebookManager
-from zip2zip_compression import CodebookConfig
 
 from zip2zip_compression import Codebook
 
@@ -155,15 +154,15 @@ def test_batch_encode_modes(
 
 def test_codebook_manager():
 
-    config = CodebookConfig(
+    config = CompressionConfig(
         initial_vocab_size=27,
         max_codebook_size=100,
         max_subtokens=5,
         pad_token_id=0,
-        disabled_ids={26},
+        disabled_ids=[26],
     )
 
-    runtime_manager = RuntimeCodebookManager(config, algorithm="fault_tolerant_lzw")
+    runtime_manager = RuntimeCodebookManager(config)
 
     ids = [[1, 2, 3, 4, 5, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5]]
 
@@ -176,12 +175,12 @@ def test_codebook_consistency_between_decode_and_manager():
     """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical."""
 
     PAD_TOKEN_ID = 0
-    config = CodebookConfig(
+    config = CompressionConfig(
         initial_vocab_size=27,
         max_codebook_size=100,
         max_subtokens=5,
         pad_token_id=PAD_TOKEN_ID,
-        disabled_ids={26, PAD_TOKEN_ID},
+        disabled_ids=[26, PAD_TOKEN_ID],
     )
 
     lzw_compressor = LZWCompressor(
@@ -210,7 +209,7 @@ def test_codebook_consistency_between_decode_and_manager():
     assert decoded_ids == ids, "Decoded IDs should match original IDs"
 
     # Now create a CodebookManager and update it with the same compressed ids
-    manager = RuntimeCodebookManager(config, algorithm="fault_tolerant_lzw")
+    manager = RuntimeCodebookManager(config)
 
     # Update the manager with the compressed ids
     for i in range(len(compressed_ids)):

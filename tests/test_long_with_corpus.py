@@ -3,7 +3,7 @@ from tqdm import tqdm
 import multiprocessing as mp
 from functools import partial
 from huggingface_hub import hf_hub_download
-from zip2zip_compression import LZWCompressor, CodebookConfig, CodebookManager
+from zip2zip_compression import LZWCompressor, CompressionConfig, CodebookManager
 
 import pytest
 
@@ -43,8 +43,6 @@ BUILTIN_COMPRESSION_CONFIG_DICT = {
     },
 }
 
-TARGET_ALGO = "fault_tolerant_lzw"
-
 
 def load_dataset(sequence_length=10_000, num_chunks=None):
     """Load and validate the dataset from HuggingFace."""
@@ -67,13 +65,17 @@ def load_dataset(sequence_length=10_000, num_chunks=None):
         nbytes = f.readinto(tokens.numpy())
         assert nbytes == 2 * num_tokens, "number of tokens read does not match header"
 
+    # replace pad token with 1
+    tokens = tokens.to(torch.int64)
+    tokens[tokens == 50256] = 1
+
     if num_chunks is None:
         return tokens.view(-1, sequence_length)
     else:
         return tokens.view(-1, sequence_length)[:num_chunks]
 
 
-def create_builtin_compressor(algo="fault_tolerant_lzw"):
+def create_builtin_compressor():
     """Create and configure the LZW compressor."""
     if COMPRESSION_CONFIG_TYPE in BUILTIN_COMPRESSION_CONFIG_DICT:
         config = BUILTIN_COMPRESSION_CONFIG_DICT[COMPRESSION_CONFIG_TYPE]
@@ -88,26 +90,26 @@ def create_builtin_compressor(algo="fault_tolerant_lzw"):
         raise ValueError(f"Invalid compressor type: {COMPRESSION_CONFIG_TYPE}")
 
 
-def create_builtin_codebook_manager(algo="fault_tolerant_lzw"):
+def create_builtin_codebook_manager():
     if COMPRESSION_CONFIG_TYPE in BUILTIN_COMPRESSION_CONFIG_DICT:
         config = BUILTIN_COMPRESSION_CONFIG_DICT[COMPRESSION_CONFIG_TYPE]
-        config = CodebookConfig(
+        config = CompressionConfig(
             initial_vocab_size=config["initial_vocab_size"],
             max_codebook_size=config["max_codebook_size"],
             max_subtokens=config["max_subtokens"],
             pad_token_id=config["pad_token_id"],
-            disabled_ids=set(config["disabled_ids"]),
+            disabled_ids=config["disabled_ids"],
         )
     else:
         raise ValueError(f"Invalid codebook manager type: {COMPRESSION_CONFIG_TYPE}")
-    return CodebookManager(config, algorithm=algo)
+    return CodebookManager(config)
 
 
 def check_idempotence(token_chunk, lzw_compressor=None, verbose=False):
     """Process a single chunk for the idempotence test"""
 
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
     original_sequence = token_chunk.tolist()
     compressed_sequence, _, _ = lzw_compressor.encode(original_sequence)
     reconstructed_sequence, _ = lzw_compressor.decode(compressed_sequence)
@@ -126,7 +128,7 @@ def check_decoding_corrupted_compression(
 ):
     """Process a single chunk for the corrupted generation test"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
     original_tokens = token_chunk.tolist()
     encoded_tokens, _, encoding_codebook = lzw_compressor.encode(original_tokens)
     corrupted_generation = corrupt(encoded_tokens, encoding_codebook)
@@ -154,12 +156,12 @@ def check_codebook_consistency_online_vs_offline_decode(
 ):
     """Process a single chunk for the codebook consistency test between decode and manager"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
 
     original_sequence = token_chunk.tolist()
 
     # Encode the data
-    compressed_sequence, _, encode_codebook = lzw_compressor.encode(original_sequence)
+    compressed_sequence, _, _ = lzw_compressor.encode(original_sequence)
 
     # Decode using lzw_compressor.decode to get the codebook
     decoded_sequence, decode_codebook = lzw_compressor.decode(compressed_sequence)
@@ -220,17 +222,13 @@ def check_codebook_consistency_during_online_generation(
 ):
     """Process a single chunk for the codebook consistency test during online generation"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
 
-    manager = create_builtin_codebook_manager(algo=TARGET_ALGO)
+    manager = create_builtin_codebook_manager()
 
     seq_len = 10000
     prompt_len = 500
     assert prompt_len < seq_len
-
-    # replace pad token with 1
-    token_chunk = token_chunk.to(torch.int64)
-    token_chunk[token_chunk == 50256] = 1
 
     original_sequence = token_chunk.tolist()
 
@@ -248,12 +246,12 @@ def check_codebook_consistency_during_online_generation(
     # Corrupt the rest of the sequence
     for t in corrupt(compressed_total_sequence[prompt_len:], total_codebook):
         manager.update_codebooks([[t]])
-    state = manager.states[0]
+    codebook = manager.get_codebooks()[0]
 
     for i, (c, c1) in enumerate(
         zip(
             total_codebook.to_list(use_padding=False),
-            state.codebook.to_list(use_padding=False),
+            codebook.to_list(use_padding=False),
         )
     ):
         if c != c1:
@@ -265,7 +263,7 @@ def check_codebook_consistency_during_online_generation(
 @pytest.fixture(scope="module")
 def dataset():
     """Fixture to load the dataset once for all tests."""
-    return load_dataset()
+    return load_dataset(num_chunks=100)
 
 
 # @pytest.fixture(scope="module")
@@ -274,7 +272,7 @@ def lzw_compressor():
     return create_builtin_compressor()
 
 
-def parallel_test_encode_decode_idempotence(
+def test_encode_decode_idempotence(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that encoding and then decoding preserves the original token sequence."""
@@ -316,8 +314,8 @@ def _process_test_decoding_corrupted_compression(args):
     return idx, check_decoding_corrupted_compression(chunk, verbose=VERBOSE)
 
 
-def parallel_test_decoding_corrupted_compression(
-    token_chunks, *, lzw_compressor=None, num_processes=None
+def test_decoding_corrupted_compression(
+    dataset, *, lzw_compressor=None, num_processes=None
 ):
     """
     Test decoding of a sequence that is a concatenation of encoded tokens and a 'corrupted' generation.
@@ -326,7 +324,7 @@ def parallel_test_decoding_corrupted_compression(
     if num_processes is None:
         num_processes = mp.cpu_count()
 
-    indexed_chunks = list(enumerate(token_chunks))  # [(0, chunk0), (1, chunk1), ...]
+    indexed_chunks = list(enumerate(dataset))  # [(0, chunk0), (1, chunk1), ...]
     with mp.Pool(processes=num_processes) as pool:
         results = list(
             tqdm(
@@ -341,7 +339,7 @@ def parallel_test_decoding_corrupted_compression(
         ), f"Decoded content mismatch in chunk {chunk_idx} at index {index}: {a} != {b}"
 
 
-def parallel_test_codebook_consistency_between_offline_and_online_decode(
+def test_codebook_consistency_between_offline_and_online_decode(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical using real-world corpus."""
@@ -361,7 +359,7 @@ def parallel_test_codebook_consistency_between_offline_and_online_decode(
         ), f"Codebook consistency check failed in chunk {i} at index {index}: {error_msg} (a={a}, b={b})"
 
 
-def parallel_test_codebook_consistency_during_online_generation(
+def test_codebook_consistency_during_online_generation(
     dataset, *, lzw_compressor=None, num_processes=None
 ):
     """Test that codebooks from lzw_compressor.decode and CodebookManager.update_codebooks are identical during online generation."""
@@ -393,29 +391,4 @@ def _pairwise_colorprint(seq1, seq2):
         if equal:
             print(f"{GREEN}{a} {sign} {b}{RESET}")
         else:
-            print(f"{RED}{a} {sign} {b}{RESET}")
-
-
-if __name__ == "__main__":
-    num_processes = mp.cpu_count()
-
-    print(f"Running tests with {num_processes} processes...")
-
-    input_dataset = load_dataset(num_chunks=1000)  # total number is 10_000
-    parallel_test_decoding_corrupted_compression(
-        input_dataset, num_processes=num_processes
-    )
-    print("Decoding corrupted compression test passed successfully.")
-    parallel_test_encode_decode_idempotence(input_dataset, num_processes=num_processes)
-    print("Encode/decode idempotence test passed successfully.")
-    parallel_test_codebook_consistency_between_offline_and_online_decode(
-        input_dataset, num_processes=num_processes
-    )
-    print(
-        "Codebook consistency test between offline and online decode passed successfully."
-    )
-    parallel_test_codebook_consistency_during_online_generation(
-        input_dataset, num_processes=num_processes
-    )
-    print("Codebook consistency test during online generation passed successfully.")
-    print("All tests passed successfully.")
+            print(f"{RED}{a} {sign} {b}{RESET}") 

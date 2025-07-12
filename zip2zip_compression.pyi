@@ -1,11 +1,29 @@
 from typing import Dict, List, Optional, Tuple, Union
 
-class CodebookConfig:
+class CompressionConfig:
     """
     Class for storing the configuration of the codebook.
     """
 
-    ...
+    def __init__(
+        self,
+        initial_vocab_size: int,
+        max_codebook_size: int,
+        max_subtokens: int,
+        pad_token_id: int,
+        disabled_ids: Optional[List[int]] = None,
+    ) -> None:
+        """
+        Initialize the CompressionConfig.
+
+        Args:
+            initial_vocab_size: The initial size of the vocabulary.
+            max_codebook_size: The maximum size of the codebook.
+            max_subtokens: The maximum number of subtokens per entry.
+            pad_token_id: The token id to use for padding.
+            disabled_ids: A list of token ids to disable.
+        """
+        ...
 
 class Codebook:
     """
@@ -25,9 +43,22 @@ class Codebook:
             The codebook as a list of lists.
         """
         ...
+
     def to_dict(self) -> Dict[int, List[int]]:
         """
-        Get the decoding dictionary for the codebook.
+        Get the codebook as a dictionary.
+        """
+        ...
+
+    def get_subtokens(self, id: int) -> Optional[List[int]]:
+        """
+        Get the subtokens for a given token id.
+
+        Args:
+            id: The token id.
+
+        Returns:
+            The subtokens for the given token id.
         """
         ...
 
@@ -160,21 +191,12 @@ class CodebookManager:
     with the new tokens.
     """
 
-    def __init__(self, config: CodebookConfig, algorithm: Optional[str] = None) -> None:
+    def __init__(self, config: CompressionConfig) -> None:
         """
         Initialize the CodebookManager.
 
         Args:
             config: The configuration for the codebook.
-            algorithm: The algorithm to use for updating the codebook. Default is "renormalizing_lzw".
-        """
-        ...
-    def set_codebooks(self, codebooks: List[Codebook]) -> None:
-        """
-        Set the codebooks. This method should be used before starting generation.
-
-        Args:
-            codebooks: The list of codebooks to set.
         """
         ...
     def get_subtokens(self, id: int, batch_index: int) -> List[int]:
@@ -200,6 +222,14 @@ class CodebookManager:
 
         Returns:
             A tuple containing the new entries in the codebooks and the indices of the new entries.
+        """
+        ...
+    def get_codebooks(self) -> List[Codebook]:
+        """
+        Get the codebooks.
+
+        Returns:
+            The list of codebooks.
         """
         ...
     def reset(self) -> None:

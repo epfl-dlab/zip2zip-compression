@@ -15,6 +15,21 @@ env:
 # 1. Linux (manylinux2014) — one job per CPython version
 ############################################################
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Run Rust tests
+      run: cargo test --workspace
+
   linux-wheels:
     name: manylinux2014 wheels
     runs-on: ubuntu-latest
@@ -23,8 +38,6 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
-
-      # Cargo cache to speed up rebuilds
       - uses: Swatinem/rust-cache@v2
 
       # Use the maturin docker wrapper (handles Rust + Python + auditwheel)
