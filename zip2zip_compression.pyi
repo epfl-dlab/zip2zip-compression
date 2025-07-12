@@ -13,6 +13,16 @@ class CompressionConfig:
         pad_token_id: int,
         disabled_ids: Optional[List[int]] = None,
     ) -> None:
+        """
+        Initialize the CompressionConfig.
+
+        Args:
+            initial_vocab_size: The initial size of the vocabulary.
+            max_codebook_size: The maximum size of the codebook.
+            max_subtokens: The maximum number of subtokens per entry.
+            pad_token_id: The token id to use for padding.
+            disabled_ids: A list of token ids to disable.
+        """
         ...
 
 class Codebook:

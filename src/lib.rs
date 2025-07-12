@@ -262,9 +262,6 @@ pub fn encode_fn(
     truncation: bool,
     max_length: Option<usize>,
 ) -> (Vec<usize>, usize) {
-    log::debug!("Hitting fn internal_encode");
-    log::debug!("arg ids: {:?}", ids);
-    log::debug!("arg offset: {}", offset);
     let mut compressed_ids: Vec<usize> = Vec::new();
 
     let get_and_push = |compressed_ids: &mut Vec<usize>, state: &mut CompressionState| {
@@ -275,7 +272,6 @@ pub fn encode_fn(
                 *state.get(&state.buffer).unwrap()
             };
             compressed_ids.push(id);
-            log::debug!("emitting id: {}", id);
         }
     };
 
@@ -288,22 +284,15 @@ pub fn encode_fn(
 
         let id = ids[i];
         i += 1;
-        log::debug!("coming id: {}", id);
-        log::debug!("buffer_ids_to_merge: {:?}", state.buffer);
-
+        
         if state.config.disabled_ids.contains(&id) {
             if state.buffer.len() > 0 {
                 get_and_push(&mut compressed_ids, state);
                 state.buffer.clear();
-                log::debug!(
-                    "force emitting buffer_ids_to_merge because of disabled id: {}",
-                    id
-                );
             }
             state.buffer.push(id);
             get_and_push(&mut compressed_ids, state);
             state.buffer.clear();
-            log::debug!("emitting disabled id: {}", id);
             continue;
         }
 
@@ -315,7 +304,6 @@ pub fn encode_fn(
         if !is_in_codebook {
             if state.next_id < state.config.initial_vocab_size + state.config.max_codebook_size {
                 state.insert_buffer(state.next_id);
-                log::debug!("inserting: {:?} -> {:?}", state.buffer, state.next_id);
                 state.next_id += 1;
             }
 
@@ -327,10 +315,6 @@ pub fn encode_fn(
 
         // reach the max number of subtokens, emit the buffer without adding new code
         if state.buffer.len() == state.config.max_subtokens {
-            log::debug!(
-                "force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}",
-                state.buffer
-            );
             get_and_push(&mut compressed_ids, state);
             state.buffer.clear();
         }
@@ -338,7 +322,6 @@ pub fn encode_fn(
 
     // Handle the last buffer
     if !state.buffer.is_empty() {
-        log::debug!("force emitting buffer_ids_to_merge because reaching the end of the ids");
         get_and_push(&mut compressed_ids, state);
     }
 
@@ -359,6 +342,7 @@ pub fn encode_fn(
         }
         _ => {}
     }
+
     (compressed_ids, i)
 }
 
@@ -368,17 +352,12 @@ pub fn encode_fn(
 ///
 /// Returns a list of ids.
 pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> Vec<usize> {
-    log::debug!("Hitting fn internal_fuzzy_decode");
-    log::debug!("arg compressed_ids: {:?}", compressed_ids);
     let mut output_ids: Vec<usize> = Vec::with_capacity(compressed_ids.len());
 
     for &id in compressed_ids {
-        log::debug!("coming id: {}", id);
-        log::debug!("buffer_ids_to_merge: {:?}", state.buffer);
         if state.config.disabled_ids.contains(&id) {
             state.buffer.clear();
             output_ids.push(id);
-            log::debug!("emitting disabled id: {}", id);
             continue;
         }
 
@@ -397,7 +376,6 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
             decoded_ids = state.buffer.clone();
         // 2. the id is a new hyper id because of cScSc pattern merge
         } else {
-            log::debug!("Unkown id: {}, because of cScSc pattern merge", id);
             state.buffer.push(state.buffer[0]);
 
             state.insert_buffer(id);
@@ -407,12 +385,10 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
         }
         // we have decoded the id, we can add it to the output
         output_ids.extend_from_slice(&decoded_ids);
-        log::debug!("emitting id: {:?}", decoded_ids);
 
         // the remaining part is to update the codebook if needed
 
         if state.next_id == state.config.initial_vocab_size + state.config.max_codebook_size {
-            log::debug!("max codebook size reached, clearing buffer_ids_to_merge");
             state.buffer.clear();
             continue;
         }
@@ -427,16 +403,6 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
         // so it must not be a new hyper id but an existing one
         // we just clear the buffer and continue
         if state.buffer.len() == state.config.max_subtokens {
-            assert!(
-                state.contains_key(&state.buffer),
-                "previous_ids: {:?} not in codebook: {:?}",
-                state.buffer,
-                state.codebook
-            );
-            log::debug!(
-                "force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}",
-                state.buffer
-            );
             state.buffer = decoded_ids.clone();
             continue;
         } else {
@@ -445,16 +411,10 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
 
                 if !state.contains_key(&state.buffer) {
                     state.insert_buffer(state.next_id);
-                    log::debug!("inserting: {:?} -> {:?}", state.buffer, state.next_id);
                     state.next_id += 1;
                     state.buffer = decoded_ids.clone();
                     break;
                 } else if state.buffer.len() == state.config.max_subtokens {
-                    // previous_ids = decoded_ids.clone();
-                    log::debug!(
-                        "force emitting buffer_ids_to_merge because of max_subtokens reached: {:?}",
-                        state.buffer
-                    );
                     // previous_ids = decoded_ids without the first element, could be empty
                     state.buffer = decoded_ids[1..].to_vec();
                     break;
@@ -754,6 +714,19 @@ impl LZWCompressor {
             .collect()
     }
 
+    /// Encode a sequence with a max_length constraint. This is used when pre-processing
+    /// the dataset to avoid wasting samples. It will try to encode the sequence in chunks
+    /// of `min_length` and `max_length` and return the compressed ids and the codebooks.
+    ///
+    /// The `ids` is the list of ids to encode.
+    ///
+    /// The `max_length` is the maximum length of the sequence.
+    ///
+    /// The `min_length` is the minimum length of the sequence.
+    ///
+    /// The `use_padding` is a boolean to indicate if the sequence should be padded.
+    ///
+    /// Returns a tuple containing the compressed ids and the codebooks.
     #[pyo3(name = "continuous_encode", signature = (ids, max_length, min_length = None, use_padding = None))]
     pub fn py_continuous_batch_encode(
         &self,
@@ -847,8 +820,6 @@ impl CodebookManager {
     ///
     /// Returns a tuple containing the updates and the indices of the updates.
     pub fn update_codebooks(&mut self, ids: Vec<Vec<usize>>) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
-        log::debug!("Hitting fn update_codebooks");
-        log::debug!("arg ids: {:?}", ids);
         // init the codebook for the first time, this depends on the batch, so it
         // is done in the first update.
         if self.states.is_empty() {
@@ -858,7 +829,6 @@ impl CodebookManager {
                 .collect();
             self.first_updates = true;
         }
-
         assert_eq!(ids.len(), self.states.len());
 
         let (mut updates, updates_indices): (Vec<Vec<usize>>, Vec<Vec<usize>>) = self
@@ -907,7 +877,6 @@ impl CodebookManager {
 
 #[pymodule]
 fn zip2zip_compression(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    env_logger::init();
     m.add_class::<CompressionConfig>()?;
     m.add_class::<Codebook>()?;
     m.add_class::<LZWCompressor>()?;
