@@ -233,6 +233,15 @@ impl CompressionState {
     }
 }
 
+#[inline(always)]
+fn codebook_contains(state: &CompressionState, ids: &Vec<usize>) -> bool {
+    if ids.len() == 1 {
+        ids[0] < state.config.initial_vocab_size
+    } else {
+        state.codebook.contains_key(ids)
+    }
+}
+
 /// Encode the input ids into a compressed ids.
 ///
 /// The `offset` is the index of the first id to encode. This parameter is used
@@ -301,7 +310,7 @@ pub fn encode_fn(
         // check if the extended buffer is still a known code
         state.buffer.push(id);
 
-        let is_in_codebook = LZWCompressor::codebook_contains(state, &state.buffer);
+        let is_in_codebook = codebook_contains(state, &state.buffer);
         //  if it's a brand new token, we can (1) emit the id for the buffer[:-1] (2) add the buffer to the codebook if still has space
         if !is_in_codebook {
             if state.next_id < state.config.initial_vocab_size + state.config.max_codebook_size {
@@ -485,15 +494,6 @@ pub struct LZWCompressor {
 }
 
 impl LZWCompressor {
-    #[inline(always)]
-    fn codebook_contains(state: &CompressionState, ids: &Vec<usize>) -> bool {
-        if ids.len() == 1 {
-            ids[0] < state.config.initial_vocab_size
-        } else {
-            state.codebook.contains_key(ids)
-        }
-    }
-
     pub fn encode(
         &self,
         ids: &Vec<usize>,
@@ -808,11 +808,11 @@ impl LZWCompressor {
 #[pyclass(module = "zip2zip_compression")]
 pub struct CodebookManager {
     /// The states of the elements in the batch.
-    states: Vec<CompressionState>,
+    pub states: Vec<CompressionState>,
     /// The first updates flag.
-    first_updates: bool,
+    pub first_updates: bool,
     /// The config of the codebook.
-    config: CompressionConfig,
+    pub config: CompressionConfig,
 }
 
 #[pymethods]

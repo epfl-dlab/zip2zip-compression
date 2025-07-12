@@ -1,5 +1,9 @@
 mod utils;
 
+use rand::{
+    distr::{Distribution, Uniform},
+    rng,
+};
 use std::time::{Duration, Instant};
 use tqdm::Iter;
 use utils::get_tokens;
@@ -113,12 +117,14 @@ fn test_codebook_manager() {
 
         let (updates, _) = codebook_manager.update_codebooks(vec![chunk]);
 
-        let encode_codebook = compression_state.codebook.to_list(true).into_iter().flatten().collect::<Vec<_>>();
+        let encode_codebook = compression_state
+            .codebook
+            .to_list(true)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
-        assert_eq!(
-            updates[0].len(),
-            encode_codebook.len()
-        );
+        assert_eq!(updates[0].len(), encode_codebook.len());
 
         assert_eq!(updates[0], encode_codebook);
 
@@ -135,10 +141,16 @@ fn benchmark_lzw_compressor() {
     let mut encode_times = Vec::with_capacity(2000);
     let mut decode_times = Vec::with_capacity(2000);
 
-    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
+    for chunk in ids
+        .chunks(1024)
+        .take(2000)
+        .map(|chunk| chunk.to_vec())
+        .tqdm()
+    {
         let start = Instant::now();
 
-        let (compressed_ids, _) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let (compressed_ids, _) =
+            lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
         let end = Instant::now();
         encode_times.push(end - start);
 
@@ -165,7 +177,12 @@ fn benchmark_codebook_manager() {
 
     let mut times = Vec::with_capacity(2000);
 
-    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()).tqdm() {
+    for chunk in ids
+        .chunks(1024)
+        .take(2000)
+        .map(|chunk| chunk.to_vec())
+        .tqdm()
+    {
         let start = Instant::now();
         let (_, _) = codebook_manager.update_codebooks(vec![chunk]);
         let end = Instant::now();
@@ -176,4 +193,62 @@ fn benchmark_codebook_manager() {
 
     let mean_time = times.iter().sum::<Duration>() / times.len() as u32;
     println!("mean time: {:?}", mean_time);
+}
+
+fn simulate_generation(ids: Vec<usize>, codebook: Codebook) -> Vec<usize> {
+    let mut rng = rng();
+    let distr: Uniform<usize> = Uniform::try_from(0..2).unwrap();
+
+    let mut output = Vec::new();
+
+    for id in ids {
+        if distr.sample(&mut rng) == 0 && id >= 50257 {
+            let subtokens = codebook.get_subtokens(id).unwrap();
+            output.extend_from_slice(&subtokens);
+        } else {
+            output.push(id);
+        }
+    }
+
+    output
+}
+
+#[test]
+fn test_codebook_manager_during_generation() {
+    let ids = get_tokens().iter().map(|id| if *id == 50256 { 1 } else { *id }).collect::<Vec<_>>();
+
+    let lzw_compressor = LZWCompressor::new(50257, 1024, 4, 50256, None);
+
+    let mut codebook_manager = CodebookManager::new(lzw_compressor.config.clone());
+
+    let prompt_len = 512;
+    let sequence_len = 2048;
+
+    for chunk in ids
+        .chunks(sequence_len)
+        .take(2000)
+        .map(|chunk| chunk.to_vec())
+        .tqdm()
+    {
+        let (compressed_chunk, encode_state) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let (dc_chunk, _) = lzw_compressor.decode(&compressed_chunk[..prompt_len].to_vec());
+        let (compressed_prompt, _) = lzw_compressor.encode(&dc_chunk, 0, PaddingStrategy::DoNotPad, false, None);
+
+        codebook_manager.update_codebooks(vec![compressed_prompt]);
+
+        for t in simulate_generation(compressed_chunk[prompt_len..].to_vec(), encode_state.codebook.clone()) {
+            codebook_manager.update_codebooks(vec![vec![t]]);
+        }
+
+        let encode_hashmap = encode_state.codebook.to_list(false);
+        let manager_hashmap = codebook_manager.states[0].codebook.to_list(false);
+
+        assert_eq!(encode_hashmap.len(), manager_hashmap.len());
+
+        for (e, m) in encode_hashmap.iter().zip(manager_hashmap.iter()) {
+            assert_eq!(e, m);
+        }
+
+        codebook_manager.reset();
+    }
 }
