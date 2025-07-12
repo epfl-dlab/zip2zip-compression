@@ -215,7 +215,10 @@ fn simulate_generation(ids: Vec<usize>, codebook: Codebook) -> Vec<usize> {
 
 #[test]
 fn test_codebook_manager_during_generation() {
-    let ids = get_tokens().iter().map(|id| if *id == 50256 { 1 } else { *id }).collect::<Vec<_>>();
+    let ids = get_tokens()
+        .iter()
+        .map(|id| if *id == 50256 { 1 } else { *id })
+        .collect::<Vec<_>>();
 
     let lzw_compressor = LZWCompressor::new(50257, 1024, 4, 50256, None);
 
@@ -230,13 +233,18 @@ fn test_codebook_manager_during_generation() {
         .map(|chunk| chunk.to_vec())
         .tqdm()
     {
-        let (compressed_chunk, encode_state) = lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let (compressed_chunk, encode_state) =
+            lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
         let (dc_chunk, _) = lzw_compressor.decode(&compressed_chunk[..prompt_len].to_vec());
-        let (compressed_prompt, _) = lzw_compressor.encode(&dc_chunk, 0, PaddingStrategy::DoNotPad, false, None);
+        let (compressed_prompt, _) =
+            lzw_compressor.encode(&dc_chunk, 0, PaddingStrategy::DoNotPad, false, None);
 
         codebook_manager.update_codebooks(vec![compressed_prompt]);
 
-        for t in simulate_generation(compressed_chunk[prompt_len..].to_vec(), encode_state.codebook.clone()) {
+        for t in simulate_generation(
+            compressed_chunk[prompt_len..].to_vec(),
+            encode_state.codebook.clone(),
+        ) {
             codebook_manager.update_codebooks(vec![vec![t]]);
         }
 
