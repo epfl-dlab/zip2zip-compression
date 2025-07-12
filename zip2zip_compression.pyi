@@ -189,14 +189,6 @@ class CodebookManager:
             config: The configuration for the codebook.
         """
         ...
-    def set_codebooks(self, codebooks: List[Codebook]) -> None:
-        """
-        Set the codebooks. This method should be used before starting generation.
-
-        Args:
-            codebooks: The list of codebooks to set.
-        """
-        ...
     def get_subtokens(self, id: int, batch_index: int) -> List[int]:
         """
         Get the subtokens for a given token id and batch index.
@@ -220,6 +212,14 @@ class CodebookManager:
 
         Returns:
             A tuple containing the new entries in the codebooks and the indices of the new entries.
+        """
+        ...
+    def get_codebooks(self) -> List[Codebook]:
+        """
+        Get the codebooks.
+
+        Returns:
+            The list of codebooks.
         """
         ...
     def reset(self) -> None:

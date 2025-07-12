@@ -152,11 +152,20 @@ impl Codebook {
     }
 }
 
+/// This struct contains the state of the compression. It is used to encode
+/// and decode without keeping the state of the compressor.
 pub struct CompressionState {
+    /// The codebook of the compression.
     pub codebook: Codebook,
+    /// The buffer of the compression. During the encoding, it is used to store
+    /// the ids to merge. During the decoding, it is used to store the previous
+    /// ids to merge.
     pub buffer: Vec<usize>,
+    /// The next id to use for the compression.
     pub next_id: usize,
+    /// The updates of the compression.
     pub updates: HashSet<usize>,
+    /// The config of the compression.
     pub config: CompressionConfig,
 }
 
@@ -179,8 +188,8 @@ impl CompressionState {
         self.codebook.get(ids)
     }
 
-    pub fn insert(&mut self, ids: Vec<usize>, id: usize) {
-        self.codebook.insert(ids, id);
+    pub fn insert_buffer(&mut self, id: usize) {
+        self.codebook.insert(self.buffer.clone(), id);
         self.updates.insert(id);
     }
 
@@ -207,13 +216,12 @@ impl CompressionState {
             vec![self.config.pad_token_id; size * self.config.max_subtokens];
         let mut updates_indices: Vec<usize> = Vec::with_capacity(size);
 
-        for &id in self.updates.iter().sorted() {
-            let index = id - self.config.initial_vocab_size;
+        for (index, &id) in self.updates.iter().sorted().enumerate() {
             let start_index = index * self.config.max_subtokens;
 
             let entry = self.codebook.get_reverse(id).unwrap();
             updates_vec[start_index..start_index + entry.len()].copy_from_slice(entry);
-            updates_indices.push(index);
+            updates_indices.push(id - self.config.initial_vocab_size);
         }
 
         if use_padding {
@@ -251,7 +259,7 @@ pub fn encode_fn(
     let mut compressed_ids: Vec<usize> = Vec::new();
 
     let get_and_push = |compressed_ids: &mut Vec<usize>, state: &mut CompressionState| {
-        if !truncation || state.buffer.len() < max_length.unwrap() {
+        if !truncation || compressed_ids.len() < max_length.unwrap() {
             let id = if state.buffer.len() == 1 {
                 state.buffer[0]
             } else {
@@ -297,7 +305,7 @@ pub fn encode_fn(
         //  if it's a brand new token, we can (1) emit the id for the buffer[:-1] (2) add the buffer to the codebook if still has space
         if !is_in_codebook {
             if state.next_id < state.config.initial_vocab_size + state.config.max_codebook_size {
-                state.codebook.insert(state.buffer.clone(), state.next_id);
+                state.insert_buffer(state.next_id);
                 log::debug!("inserting: {:?} -> {:?}", state.buffer, state.next_id);
                 state.next_id += 1;
             }
@@ -381,15 +389,11 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
         // 2. the id is a new hyper id because of cScSc pattern merge
         } else {
             log::debug!("Unkown id: {}, because of cScSc pattern merge", id);
-            decoded_ids = state.buffer.clone();
-            decoded_ids.push(state.buffer[0]);
+            state.buffer.push(state.buffer[0]);
 
-            state.insert(decoded_ids.clone(), id);
-            log::debug!("inserting: {:?} -> {:?}", decoded_ids, id);
+            state.insert_buffer(id);
             state.next_id += 1;
-            state.buffer = decoded_ids.clone();
-            output_ids.extend_from_slice(&decoded_ids);
-            log::debug!("emitting id: {:?}", decoded_ids);
+            output_ids.extend_from_slice(&state.buffer);
             continue;
         }
         // we have decoded the id, we can add it to the output
@@ -431,7 +435,7 @@ pub fn decode_fn(state: &mut CompressionState, compressed_ids: &Vec<usize>) -> V
                 state.buffer.push(decoded_ids[0]);
 
                 if !state.contains_key(&state.buffer) {
-                    state.insert(state.buffer.clone(), state.next_id);
+                    state.insert_buffer(state.next_id);
                     log::debug!("inserting: {:?} -> {:?}", state.buffer, state.next_id);
                     state.next_id += 1;
                     state.buffer = decoded_ids.clone();
@@ -614,7 +618,7 @@ impl LZWCompressor {
     /// The `max_length` is the maximum length of the sequence.
     ///
     /// Returns a tuple containing the compressed ids, the attention mask and the codebook.
-    #[pyo3(name = "encode")]
+    #[pyo3(name = "encode", signature = (ids, padding = None, truncation = None, max_length = None))]
     pub fn py_encode(
         &self,
         py: Python<'_>,
@@ -669,7 +673,7 @@ impl LZWCompressor {
     /// The `max_length` is the maximum length of the sequence.
     ///
     /// Returns a tuple containing the compressed ids, the attention mask and the codebook.
-    #[pyo3(name = "batch_encode")]
+    #[pyo3(name = "batch_encode", signature = (ids, padding = None, truncation = None, max_length = None))]
     pub fn py_batch_encode(
         &self,
         py: Python<'_>,
@@ -750,7 +754,7 @@ impl LZWCompressor {
             .collect()
     }
 
-    #[pyo3(name = "continuous_encode")]
+    #[pyo3(name = "continuous_encode", signature = (ids, max_length, min_length = None, use_padding = None))]
     pub fn py_continuous_batch_encode(
         &self,
         ids: Vec<Vec<usize>>,

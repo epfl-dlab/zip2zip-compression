@@ -3,7 +3,7 @@ from tqdm import tqdm
 import multiprocessing as mp
 from functools import partial
 from huggingface_hub import hf_hub_download
-from zip2zip_compression import LZWCompressor, CodebookConfig, CodebookManager
+from zip2zip_compression import LZWCompressor, CompressionConfig, CodebookManager
 
 import pytest
 
@@ -43,8 +43,6 @@ BUILTIN_COMPRESSION_CONFIG_DICT = {
     },
 }
 
-TARGET_ALGO = "fault_tolerant_lzw"
-
 
 def load_dataset(sequence_length=10_000, num_chunks=None):
     """Load and validate the dataset from HuggingFace."""
@@ -77,7 +75,7 @@ def load_dataset(sequence_length=10_000, num_chunks=None):
         return tokens.view(-1, sequence_length)[:num_chunks]
 
 
-def create_builtin_compressor(algo="fault_tolerant_lzw"):
+def create_builtin_compressor():
     """Create and configure the LZW compressor."""
     if COMPRESSION_CONFIG_TYPE in BUILTIN_COMPRESSION_CONFIG_DICT:
         config = BUILTIN_COMPRESSION_CONFIG_DICT[COMPRESSION_CONFIG_TYPE]
@@ -92,26 +90,26 @@ def create_builtin_compressor(algo="fault_tolerant_lzw"):
         raise ValueError(f"Invalid compressor type: {COMPRESSION_CONFIG_TYPE}")
 
 
-def create_builtin_codebook_manager(algo="fault_tolerant_lzw"):
+def create_builtin_codebook_manager():
     if COMPRESSION_CONFIG_TYPE in BUILTIN_COMPRESSION_CONFIG_DICT:
         config = BUILTIN_COMPRESSION_CONFIG_DICT[COMPRESSION_CONFIG_TYPE]
-        config = CodebookConfig(
+        config = CompressionConfig(
             initial_vocab_size=config["initial_vocab_size"],
             max_codebook_size=config["max_codebook_size"],
             max_subtokens=config["max_subtokens"],
             pad_token_id=config["pad_token_id"],
-            disabled_ids=set(config["disabled_ids"]),
+            disabled_ids=config["disabled_ids"],
         )
     else:
         raise ValueError(f"Invalid codebook manager type: {COMPRESSION_CONFIG_TYPE}")
-    return CodebookManager(config, algorithm=algo)
+    return CodebookManager(config)
 
 
 def check_idempotence(token_chunk, lzw_compressor=None, verbose=False):
     """Process a single chunk for the idempotence test"""
 
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
     original_sequence = token_chunk.tolist()
     compressed_sequence, _, _ = lzw_compressor.encode(original_sequence)
     reconstructed_sequence, _ = lzw_compressor.decode(compressed_sequence)
@@ -130,7 +128,7 @@ def check_decoding_corrupted_compression(
 ):
     """Process a single chunk for the corrupted generation test"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
     original_tokens = token_chunk.tolist()
     encoded_tokens, _, encoding_codebook = lzw_compressor.encode(original_tokens)
     corrupted_generation = corrupt(encoded_tokens, encoding_codebook)
@@ -158,12 +156,12 @@ def check_codebook_consistency_online_vs_offline_decode(
 ):
     """Process a single chunk for the codebook consistency test between decode and manager"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
 
     original_sequence = token_chunk.tolist()
 
     # Encode the data
-    compressed_sequence, _, encode_codebook = lzw_compressor.encode(original_sequence)
+    compressed_sequence, _, _ = lzw_compressor.encode(original_sequence)
 
     # Decode using lzw_compressor.decode to get the codebook
     decoded_sequence, decode_codebook = lzw_compressor.decode(compressed_sequence)
@@ -224,9 +222,9 @@ def check_codebook_consistency_during_online_generation(
 ):
     """Process a single chunk for the codebook consistency test during online generation"""
     if lzw_compressor is None:
-        lzw_compressor = create_builtin_compressor(algo=TARGET_ALGO)
+        lzw_compressor = create_builtin_compressor()
 
-    manager = create_builtin_codebook_manager(algo=TARGET_ALGO)
+    manager = create_builtin_codebook_manager()
 
     seq_len = 10000
     prompt_len = 500
@@ -248,12 +246,12 @@ def check_codebook_consistency_during_online_generation(
     # Corrupt the rest of the sequence
     for t in corrupt(compressed_total_sequence[prompt_len:], total_codebook):
         manager.update_codebooks([[t]])
-    state = manager.states[0]
+    codebook = manager.get_codebooks()[0]
 
     for i, (c, c1) in enumerate(
         zip(
             total_codebook.to_list(use_padding=False),
-            state.codebook.to_list(use_padding=False),
+            codebook.to_list(use_padding=False),
         )
     ):
         if c != c1:
