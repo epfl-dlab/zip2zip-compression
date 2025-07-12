@@ -1,7 +1,12 @@
 [package]
 name = "zip2zip_compression"
-version = "0.3.2"
-edition = "2021"
+version = "0.3.3"
+edition = "2024"
+authors = ["Nathan Ranchin", "Saibo Geng"]
+description = "A high-performance LZW compression library built for [zip2zip](https://arxiv.org/abs/2506.01084)."
+readme = "README.md"
+repository = "https://github.com/epfl-dlab/zip2zip-compression"
+license-file = "LICENSE"
 
 [lib]
 name = "zip2zip_compression"
@@ -18,7 +23,7 @@ itertools = "0.14.0"
 pyo3 = { version = "0.24.2", features = ["extension-module", "hashbrown", "py-clone"] }
 rand = "0.9"
 rayon = "1.10.0"
-clap = { version = "4", features = ["derive"] } # CLI argument parsing
+clap = { version = "4", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -27,6 +32,3 @@ serde_json = "1.0.140"
 [dev-dependencies]
 hf-hub = "0.4.3"
 tqdm = "0.8.0"
-
-[profile.release]
-debug = true

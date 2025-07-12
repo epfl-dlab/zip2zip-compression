@@ -1,5 +1,5 @@
 use clap::Parser;
-use rand::{distr::Uniform, rng, Rng};
+use rand::{Rng, distr::Uniform, rng};
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
