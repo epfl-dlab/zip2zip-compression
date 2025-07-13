@@ -11,8 +11,6 @@ fn zip2zip_compression(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<codec::Codebook>()?;
     m.add_class::<compressor::LZWCompressor>()?;
     m.add_class::<manager::CodebookManager>()?;
-    #[cfg(feature = "pytorch")]
-    m.add_class::<manager::PyTorchCodebookManager>()?;
 
     Ok(())
 }

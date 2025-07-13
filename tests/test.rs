@@ -9,8 +9,8 @@ use tqdm::Iter;
 use utils::get_tokens;
 use zip2zip_compression::{
     codec::Codebook,
-    config::{CompressionConfig, PaddingStrategy},
     compressor::LZWCompressor,
+    config::{CompressionConfig, PaddingStrategy},
     manager::CodebookManager,
 };
 
