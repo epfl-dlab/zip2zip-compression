@@ -1,11 +1,11 @@
 use clap::Parser;
-use rand::{distributions::Uniform, thread_rng, Rng};
+use rand::{Rng, distr::Uniform, rng};
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-use zip2zip_compression::{LZWCompressor, PaddingStrategy};
+use zip2zip_compression::{compressor::LZWCompressor, config::PaddingStrategy};
 
 #[derive(Parser, Debug)]
 #[command(name = "LZW Compressor")]
@@ -58,9 +58,9 @@ fn parse_ids_from_file(path: &PathBuf) -> Vec<usize> {
 }
 
 fn generate_random_ids(len: usize, vocab_size: usize) -> Vec<usize> {
-    let rng = thread_rng();
-    let dist = Uniform::new(0, vocab_size);
-    rng.sample_iter(dist).take(len).collect()
+    let thread_rng = rng();
+    let distribution = Uniform::new(0, vocab_size).unwrap();
+    thread_rng.sample_iter(distribution).take(len).collect()
 }
 
 fn main() {
@@ -94,12 +94,12 @@ fn main() {
         max_codebook_size,
         args.max_subtokens,
         args.pad_token_id,
-        args.disabled_ids.clone()
+        args.disabled_ids.clone(),
     );
 
     let start = Instant::now();
-    let ((compressed_ids, _codebook), i) =
-        compressor.internal_encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
+    let (compressed_ids, encoder_state) =
+        compressor.encode(&ids, 0, PaddingStrategy::DoNotPad, false, None);
     let encode_time = start.elapsed();
 
     println!(
@@ -109,7 +109,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let (decoded_ids, codebook) = compressor.internal_decode(&compressed_ids);
+    let (decoded_ids, _) = compressor.decode(&compressed_ids);
     let decode_time = start.elapsed();
 
     println!(
@@ -136,18 +136,14 @@ fn main() {
     println!("compressed_ids: {:?}", compressed_ids);
 
     // print codebook
-    println!("codebook: {:?}", codebook.base_ids2hyper_id_map);
-
-    // print i
-    println!("i: {:?}", i);
+    println!("codebook: {:?}", encoder_state.codebook.inner);
 
     println!(
         "✔ Compression successful. Compression ratio: {:.2}x ({} → {})",
         ids.len() as f64 / compressed_ids.len() as f64,
         ids.len(),
         compressed_ids.len()
-        );
+    );
 
     println!("✔ Compression and decompression succeeded.");
-
 }
