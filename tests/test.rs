@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 use tqdm::Iter;
 use utils::get_tokens;
 use zip2zip_compression::{
-    Codebook, CodebookManager, CompressionConfig, LZWCompressor, PaddingStrategy,
+    codec::Codebook,
+    config::{CompressionConfig, PaddingStrategy},
+    compressor::LZWCompressor,
+    manager::CodebookManager,
 };
 
 fn get_alphabet_compression_config() -> CompressionConfig {

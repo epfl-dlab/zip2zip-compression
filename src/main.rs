@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-use zip2zip_compression::{LZWCompressor, PaddingStrategy};
+use zip2zip_compression::{compressor::LZWCompressor, config::PaddingStrategy};
 
 #[derive(Parser, Debug)]
 #[command(name = "LZW Compressor")]
