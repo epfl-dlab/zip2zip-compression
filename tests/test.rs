@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tqdm::Iter;
 use utils::get_tokens;
 use zip2zip_compression::{
-    codec::Codebook,
+    codec::{Codebook, CompressionState},
     compressor::LZWCompressor,
     config::{CompressionConfig, PaddingStrategy},
     manager::CodebookManager,
@@ -117,8 +117,9 @@ fn test_codebook_manager() {
     {
         let (_, compression_state) =
             lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
-
-        let (updates, _) = codebook_manager.update_codebooks(vec![chunk]);
+        
+        let mut state = CompressionState::new_from_compressor(&lzw_compressor);
+        let (updates, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
 
         let encode_codebook = compression_state
             .codebook
@@ -130,8 +131,6 @@ fn test_codebook_manager() {
         assert_eq!(updates[0].len(), encode_codebook.len());
 
         assert_eq!(updates[0], encode_codebook);
-
-        codebook_manager.reset();
     }
 }
 
@@ -176,7 +175,7 @@ fn benchmark_codebook_manager() {
 
     let compressor_config = CompressionConfig::new(50257, 1024, 4, 50256, None);
 
-    let mut codebook_manager = CodebookManager::new(compressor_config);
+    let mut codebook_manager = CodebookManager::new(compressor_config.clone());
 
     let mut times = Vec::with_capacity(2000);
 
@@ -187,11 +186,10 @@ fn benchmark_codebook_manager() {
         .tqdm()
     {
         let start = Instant::now();
-        let (_, _) = codebook_manager.update_codebooks(vec![chunk]);
+        let mut state = CompressionState::new(compressor_config.clone());
+        let (_, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
         let end = Instant::now();
         times.push(end - start);
-
-        codebook_manager.reset();
     }
 
     let mean_time = times.iter().sum::<Duration>() / times.len() as u32;
@@ -242,24 +240,23 @@ fn test_codebook_manager_during_generation() {
         let (compressed_prompt, _) =
             lzw_compressor.encode(&dc_chunk, 0, PaddingStrategy::DoNotPad, false, None);
 
-        codebook_manager.update_codebooks(vec![compressed_prompt]);
+        let mut state = CompressionState::new(lzw_compressor.config.clone());
+        codebook_manager.update_codebooks(vec![compressed_prompt], vec![&mut state], false);
 
         for t in simulate_generation(
             compressed_chunk[prompt_len..].to_vec(),
             encode_state.codebook.clone(),
         ) {
-            codebook_manager.update_codebooks(vec![vec![t]]);
+            codebook_manager.update_codebooks(vec![vec![t]], vec![&mut state], false);
         }
 
         let encode_hashmap = encode_state.codebook.to_list(false);
-        let manager_hashmap = codebook_manager.states[0].codebook.to_list(false);
+        let manager_hashmap = state.codebook.to_list(false);
 
         assert_eq!(encode_hashmap.len(), manager_hashmap.len());
 
         for (e, m) in encode_hashmap.iter().zip(manager_hashmap.iter()) {
             assert_eq!(e, m);
         }
-
-        codebook_manager.reset();
     }
 }

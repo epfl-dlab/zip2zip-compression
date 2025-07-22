@@ -62,9 +62,9 @@ class Codebook:
         """
         ...
 
-class CodebookState:
+class CompressionState:
     """
-    Class for storing the state of a codebook.
+    Class for storing the state of the compression.
     """
 
     ...
@@ -199,43 +199,21 @@ class CodebookManager:
             config: The configuration for the codebook.
         """
         ...
-    def get_subtokens(self, id: int, batch_index: int) -> List[int]:
-        """
-        Get the subtokens for a given token id and batch index.
-
-        Args:
-            id: The token id.
-            batch_index: The batch index.
-
-        Returns:
-            The subtokens for the given token id and batch index.
-        """
-        ...
     def update_codebooks(
-        self, ids: List[List[int]]
+        self, ids: List[List[int]], states: List[CompressionState], use_padding: bool
     ) -> Tuple[List[List[int]], List[List[int]]]:
         """
         Update the codebooks with the new tokens.
 
         Args:
             ids: The new tokens to update the codebooks with.
+            states: The states of the compression.
+            use_padding: Whether to use padding. If True, the codebook will be padded with the pad_token_id
+            up to the maximum length of the codebook. Each entry in the codebook will also be padded with
+            the pad_token_id up to the maximum number of subtokens per entry. If False, the codebook will
+            not be padded.
 
         Returns:
             A tuple containing the new entries in the codebooks and the indices of the new entries.
-        """
-        ...
-    def get_codebooks(self) -> List[Codebook]:
-        """
-        Get the codebooks.
-
-        Returns:
-            The list of codebooks.
-        """
-        ...
-    def reset(self) -> None:
-        """
-        Reset the codebook manager.
-
-        This method should be called when the generation is finished.
         """
         ...

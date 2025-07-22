@@ -110,6 +110,8 @@ impl Codebook {
 
 /// This struct contains the state of the compression. It is used to encode
 /// and decode without keeping the state of the compressor.
+#[pyclass(module = "zip2zip_compression")]
+#[derive(Debug, Clone)]
 pub struct CompressionState {
     /// The codebook of the compression.
     pub codebook: Codebook,
@@ -186,6 +188,14 @@ impl CompressionState {
 
         self.updates.clear();
         (updates_vec, updates_indices)
+    }
+}
+
+#[pymethods]
+impl CompressionState {
+    #[new]
+    pub fn py_new(config: CompressionConfig) -> Self {
+        Self::new(config)
     }
 }
 
