@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 fn zip2zip_compression(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::CompressionConfig>()?;
     m.add_class::<codec::Codebook>()?;
+    m.add_class::<codec::CompressionState>()?;
     m.add_class::<compressor::LZWCompressor>()?;
     m.add_class::<manager::CodebookManager>()?;
 
