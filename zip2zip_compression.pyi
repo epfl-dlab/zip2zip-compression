@@ -67,7 +67,14 @@ class CompressionState:
     Class for storing the state of the compression.
     """
 
-    ...
+    def __init__(self, config: CompressionConfig) -> None:
+        """
+        Initialize the CompressionState.
+
+        Args:
+            config: The configuration for the compression.
+        """
+        ...
 
 class LZWCompressor:
     """
