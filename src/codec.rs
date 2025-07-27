@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::compressor::LZWCompressor;
 use crate::config::{CompressionConfig, PaddingStrategy};
 
+pub const PADDING_INDEX: isize = -1;
+
 /// This struct contains the state of the compression (encoding). This is
 /// returned to the Python runtime to be used with the `CodebookManager`.
 #[pyclass(module = "zip2zip_compression")]
@@ -163,7 +165,7 @@ impl CompressionState {
         self.codebook.get_reverse(id).map(|x| x.clone())
     }
 
-    pub fn get_updates(&mut self, use_padding: bool) -> (Vec<usize>, Vec<usize>) {
+    pub fn get_updates(&mut self, use_padding: bool) -> (Vec<usize>, Vec<isize>) {
         let size = if use_padding {
             self.config.max_codebook_size
         } else {
@@ -172,18 +174,19 @@ impl CompressionState {
 
         let mut updates_vec: Vec<usize> =
             vec![self.config.pad_token_id; size * self.config.max_subtokens];
-        let mut updates_indices: Vec<usize> = Vec::with_capacity(size);
+        let mut updates_indices: Vec<isize> = Vec::with_capacity(size);
 
         for (index, &id) in self.updates.iter().sorted().enumerate() {
             let start_index = index * self.config.max_subtokens;
 
             let entry = self.codebook.get_reverse(id).unwrap();
             updates_vec[start_index..start_index + entry.len()].copy_from_slice(entry);
-            updates_indices.push(id - self.config.initial_vocab_size);
+            updates_indices.push(id as isize - self.config.initial_vocab_size as isize);
         }
 
         if use_padding {
             updates_vec.resize(size * self.config.max_subtokens, self.config.pad_token_id);
+            updates_indices.resize(size, PADDING_INDEX);
         }
 
         self.updates.clear();
