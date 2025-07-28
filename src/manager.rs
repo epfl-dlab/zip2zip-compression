@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::codec::{CompressionState, decode_fn, PADDING_INDEX};
+use crate::codec::{CompressionState, PADDING_INDEX, decode_fn};
 use crate::config::CompressionConfig;
 
 /// The codebbok manager is a struct used to continue the creation of the codebook
@@ -20,7 +20,12 @@ impl CodebookManager {
     /// The `states` is the list of states to update the codebooks with.
     ///
     /// Returns a tuple containing the updates and the indices of the updates.
-    pub fn update_codebooks(&mut self, ids: Vec<Vec<usize>>, states: Vec<&mut CompressionState>, use_padding: bool) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
+    pub fn update_codebooks(
+        &mut self,
+        ids: Vec<Vec<usize>>,
+        states: Vec<&mut CompressionState>,
+        use_padding: bool,
+    ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
         assert_eq!(ids.len(), states.len());
 
         let (mut updates, mut updates_indices): (Vec<Vec<usize>>, Vec<Vec<isize>>) = states
@@ -37,10 +42,17 @@ impl CodebookManager {
             .unzip();
 
         if !use_padding {
-            let max_length = updates_indices.iter().map(|indices| indices.len()).max().unwrap_or(0);
+            let max_length = updates_indices
+                .iter()
+                .map(|indices| indices.len())
+                .max()
+                .unwrap_or(0);
 
             updates.iter_mut().for_each(|ids| {
-                ids.resize(max_length * self.config.max_subtokens, self.config.pad_token_id);
+                ids.resize(
+                    max_length * self.config.max_subtokens,
+                    self.config.pad_token_id,
+                );
             });
 
             updates_indices.iter_mut().for_each(|indices| {
@@ -56,13 +68,17 @@ impl CodebookManager {
 impl CodebookManager {
     #[new]
     pub fn new(config: CompressionConfig) -> Self {
-        Self {
-            config,
-        }
+        Self { config }
     }
 
     #[pyo3(name = "update_codebooks")]
-    pub fn py_update_codebooks(&mut self, ids: Vec<Vec<usize>>, mut states: Vec<Py<CompressionState>>, use_padding: bool, py: Python<'_>) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
+    pub fn py_update_codebooks(
+        &mut self,
+        ids: Vec<Vec<usize>>,
+        mut states: Vec<Py<CompressionState>>,
+        use_padding: bool,
+        py: Python<'_>,
+    ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
         let mut borrowed_states = states
             .iter_mut()
             .map(|state| state.borrow_mut(py))

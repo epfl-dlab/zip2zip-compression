@@ -5,7 +5,6 @@ use rand::{
     rng,
 };
 use std::time::{Duration, Instant};
-use tqdm::Iter;
 use utils::get_tokens;
 use zip2zip_compression::{
     codec::{Codebook, CompressionState},
@@ -91,7 +90,6 @@ fn test_encode_decode() {
             .chunks(chunk_size)
             .take(2000)
             .map(|chunk| chunk.to_vec())
-            .tqdm()
         {
             let (compressed_ids, _) =
                 lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
@@ -109,15 +107,10 @@ fn test_codebook_manager() {
 
     let mut codebook_manager = CodebookManager::new(lzw_compressor.config.clone());
 
-    for chunk in ids
-        .chunks(1024)
-        .take(2000)
-        .map(|chunk| chunk.to_vec())
-        .tqdm()
-    {
+    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()) {
         let (_, compression_state) =
             lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
-        
+
         let mut state = CompressionState::new_from_compressor(&lzw_compressor);
         let (updates, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
 
@@ -143,12 +136,7 @@ fn benchmark_lzw_compressor() {
     let mut encode_times = Vec::with_capacity(2000);
     let mut decode_times = Vec::with_capacity(2000);
 
-    for chunk in ids
-        .chunks(1024)
-        .take(2000)
-        .map(|chunk| chunk.to_vec())
-        .tqdm()
-    {
+    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()) {
         let start = Instant::now();
 
         let (compressed_ids, _) =
@@ -179,12 +167,7 @@ fn benchmark_codebook_manager() {
 
     let mut times = Vec::with_capacity(2000);
 
-    for chunk in ids
-        .chunks(1024)
-        .take(2000)
-        .map(|chunk| chunk.to_vec())
-        .tqdm()
-    {
+    for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()) {
         let start = Instant::now();
         let mut state = CompressionState::new(compressor_config.clone());
         let (_, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
@@ -232,7 +215,6 @@ fn test_codebook_manager_during_generation() {
         .chunks(sequence_len)
         .take(2000)
         .map(|chunk| chunk.to_vec())
-        .tqdm()
     {
         let (compressed_chunk, encode_state) =
             lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
