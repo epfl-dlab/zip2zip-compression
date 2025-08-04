@@ -112,7 +112,11 @@ fn test_codebook_manager() {
             lzw_compressor.encode(&chunk, 0, PaddingStrategy::DoNotPad, false, None);
 
         let mut state = CompressionState::new_from_compressor(&lzw_compressor);
-        let (updates, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
+        let (updates, _) = codebook_manager.update_codebooks_and_get_updates(
+            vec![chunk],
+            vec![&mut state],
+            true,
+        );
 
         let encode_codebook = compression_state
             .codebook
@@ -170,7 +174,11 @@ fn benchmark_codebook_manager() {
     for chunk in ids.chunks(1024).take(2000).map(|chunk| chunk.to_vec()) {
         let start = Instant::now();
         let mut state = CompressionState::new(compressor_config.clone());
-        let (_, _) = codebook_manager.update_codebooks(vec![chunk], vec![&mut state], true);
+        codebook_manager.update_codebooks_and_get_updates(
+            vec![chunk],
+            vec![&mut state],
+            true,
+        );
         let end = Instant::now();
         times.push(end - start);
     }
@@ -223,13 +231,21 @@ fn test_codebook_manager_during_generation() {
             lzw_compressor.encode(&dc_chunk, 0, PaddingStrategy::DoNotPad, false, None);
 
         let mut state = CompressionState::new(lzw_compressor.config.clone());
-        codebook_manager.update_codebooks(vec![compressed_prompt], vec![&mut state], false);
+        codebook_manager.update_codebooks_and_get_updates(
+            vec![compressed_prompt],
+            vec![&mut state],
+            false,
+        );
 
         for t in simulate_generation(
             compressed_chunk[prompt_len..].to_vec(),
             encode_state.codebook.clone(),
         ) {
-            codebook_manager.update_codebooks(vec![vec![t]], vec![&mut state], false);
+            codebook_manager.update_codebooks_and_get_updates(
+                vec![vec![t]],
+                vec![&mut state],
+                false,
+            );
         }
 
         let encode_hashmap = encode_state.codebook.to_list(false);

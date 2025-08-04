@@ -18,25 +18,37 @@ impl CodebookManager {
     /// The `ids` is the list of ids to update the codebooks with.
     ///
     /// The `states` is the list of states to update the codebooks with.
-    ///
-    /// Returns a tuple containing the updates and the indices of the updates.
     pub fn update_codebooks(
         &mut self,
         ids: Vec<Vec<usize>>,
-        states: Vec<&mut CompressionState>,
-        use_padding: bool,
-    ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
+        states: &mut [&mut CompressionState],
+    ) {
         assert_eq!(ids.len(), states.len());
 
+        states.iter_mut().zip(ids.into_iter()).for_each(|(state, ids)| {
+            if ids.len() == 1 && ids[0] == self.config.pad_token_id {
+                return;
+            }
+
+            let _ = decode_fn(state, &ids);
+        });
+    }
+
+    /// Get the updates for a single element in the batch.
+    ///
+    /// The `states` is the list of states to get the updates from.
+    ///
+    /// The `use_padding` is a boolean indicating whether to use padding.
+    ///
+    /// Returns a tuple containing the updates and the indices of the updates.
+    pub fn get_updates(
+        &self,
+        states: &mut [&mut CompressionState],
+        use_padding: bool,
+    ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
         let (mut updates, mut updates_indices): (Vec<Vec<usize>>, Vec<Vec<isize>>) = states
             .into_iter()
-            .zip(ids.iter())
-            .map(|(state, ids)| {
-                if ids.len() == 1 && ids[0] == self.config.pad_token_id {
-                    return (vec![], vec![]);
-                }
-
-                let _ = decode_fn(state, ids);
+            .map(|state| {
                 state.get_updates(use_padding)
             })
             .unzip();
@@ -62,6 +74,16 @@ impl CodebookManager {
 
         (updates, updates_indices)
     }
+
+    pub fn update_codebooks_and_get_updates(
+        &mut self,
+        ids: Vec<Vec<usize>>,
+        mut states: Vec<&mut CompressionState>,
+        use_padding: bool,
+    ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
+        self.update_codebooks(ids, &mut states);
+        self.get_updates(&mut states, use_padding)
+    }
 }
 
 #[pymethods]
@@ -76,6 +98,25 @@ impl CodebookManager {
         &mut self,
         ids: Vec<Vec<usize>>,
         mut states: Vec<Py<CompressionState>>,
+        py: Python<'_>,
+    ) {
+        let mut borrowed_states = states
+            .iter_mut()
+            .map(|state| state.borrow_mut(py))
+            .collect::<Vec<_>>();
+
+        let mut states_refs: Vec<&mut CompressionState> = borrowed_states
+            .iter_mut()
+            .map(|state| &mut **state)
+            .collect();
+
+        self.update_codebooks(ids, &mut states_refs)
+    }
+
+    #[pyo3(name = "get_updates")]
+    pub fn py_get_updates(
+        &self,
+        mut states: Vec<Py<CompressionState>>,
         use_padding: bool,
         py: Python<'_>,
     ) -> (Vec<Vec<usize>>, Vec<Vec<isize>>) {
@@ -84,11 +125,11 @@ impl CodebookManager {
             .map(|state| state.borrow_mut(py))
             .collect::<Vec<_>>();
 
-        let states_refs = borrowed_states
+        let mut states_refs: Vec<&mut CompressionState> = borrowed_states
             .iter_mut()
             .map(|state| &mut **state)
             .collect();
 
-        self.update_codebooks(ids, states_refs, use_padding)
+        self.get_updates(&mut states_refs, use_padding)
     }
 }
