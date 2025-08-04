@@ -207,13 +207,30 @@ class CodebookManager:
         """
         ...
     def update_codebooks(
-        self, ids: List[List[int]], states: List[CompressionState], use_padding: bool
+        self, ids: List[List[int]], states: List[CompressionState]
     ) -> Tuple[List[List[int]], List[List[int]]]:
         """
         Update the codebooks with the new tokens.
 
         Args:
             ids: The new tokens to update the codebooks with.
+            states: The states of the compression.
+            use_padding: Whether to use padding. If True, the codebook will be padded with the pad_token_id
+            up to the maximum length of the codebook. Each entry in the codebook will also be padded with
+            the pad_token_id up to the maximum number of subtokens per entry. If False, the codebook will
+            not be padded.
+        """
+        ...
+
+    def get_updates(
+        self,
+        states: List[CompressionState],
+        use_padding: bool
+    ) -> Tuple[List[List[int]], List[List[int]]]:
+        """
+        Get the updates for a all the states in the batch.
+
+        Args:
             states: The states of the compression.
             use_padding: Whether to use padding. If True, the codebook will be padded with the pad_token_id
             up to the maximum length of the codebook. Each entry in the codebook will also be padded with
