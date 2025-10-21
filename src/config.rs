@@ -1,6 +1,15 @@
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashSet;
+
+fn serialize_sorted_hashset<S>(value: &HashSet<usize>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut sorted: Vec<_> = value.iter().copied().collect();
+    sorted.sort_unstable();
+    sorted.serialize(serializer)
+}
 
 /// This is the config for the compression.
 #[pyclass(get_all, module = "zip2zip_compression")]
@@ -20,6 +29,7 @@ pub struct CompressionConfig {
     /// For example, if `disable_ids = {42}` and we have a squence of tokens:
     /// [1, 42, 5, 6], we cannot create the hypertoken 7 = [1, 42] because
     /// 42 is disabled.
+    #[serde(serialize_with = "serialize_sorted_hashset")]
     pub disabled_ids: HashSet<usize>,
 }
 
