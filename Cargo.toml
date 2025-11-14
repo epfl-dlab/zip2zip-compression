@@ -1,6 +1,6 @@
 [package]
 name = "zip2zip_compression"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 authors = ["Nathan Ranchin", "Saibo Geng"]
 description = "A high-performance LZW compression library built for [zip2zip](https://arxiv.org/abs/2506.01084)."
